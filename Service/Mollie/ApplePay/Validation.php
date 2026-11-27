@@ -12,6 +12,7 @@ use Laminas\Uri\Http;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\UrlInterface;
 use Magento\Store\Model\StoreManagerInterface;
+use Mollie\Api\Models\Operations\RequestApplePayPaymentSessionRequestBody;
 use Mollie\Payment\Config;
 use Mollie\Payment\Service\Mollie\MollieApiClient;
 
@@ -34,9 +35,16 @@ class Validation
             $domain = $this->http->parse($this->url->getBaseUrl())->getHost();
         }
 
+        $response = $api->wallets->requestApplePaySession(
+            new RequestApplePayPaymentSessionRequestBody(
+                validationUrl: $validationUrl,
+                domain: (string) $domain,
+            ),
+        );
+
         return json_encode(
-            $api->wallets->requestApplePayPaymentSession($domain, $validationUrl)->toArray(),
-            JSON_THROW_ON_ERROR
+            $response->entitySession2 ?? [],
+            JSON_THROW_ON_ERROR,
         );
     }
 

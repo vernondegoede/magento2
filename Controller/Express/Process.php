@@ -20,14 +20,13 @@ use Magento\Framework\View\Result\PageFactory;
 use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Api\Data\CartInterface;
 use Magento\Store\Model\StoreManagerInterface;
+use Mollie\Api\Models\Components\SessionResponseStatus;
 use Mollie\Payment\Api\PaymentTokenRepositoryInterface;
 use Mollie\Payment\Service\Mollie\Express\ProductSessions;
 use Mollie\Payment\Service\Mollie\MollieApiClient;
 
 class Process implements HttpGetActionInterface
 {
-    private const STATUS_COMPLETED = 'completed';
-
     public function __construct(
         readonly private RequestInterface $request,
         readonly private CartRepositoryInterface $cartRepository,
@@ -66,13 +65,10 @@ class Process implements HttpGetActionInterface
             return $this->renderResultPage($token);
         }
 
-        $mollie = $this->mollieApiClient->loadByStore($cart->getStoreId());
-        $session = $mollie->sessions->get($sessionId);
+        $mollie = $this->mollieApiClient->loadByStore((int) $cart->getStoreId());
+        $session = $mollie->checkoutSessions->get($sessionId)->sessionResponse;
 
-        /** @var 'open'|'expired'|'completed' $status */
-        $status = $session->status;
-
-        if ($status != self::STATUS_COMPLETED) {
+        if ($session->status !== SessionResponseStatus::Completed) {
             return $this->redirectToCart($cart);
         }
 
@@ -89,8 +85,9 @@ class Process implements HttpGetActionInterface
     private function processProductSession(string $token, string $sessionId): ResultInterface
     {
         $mollie = $this->mollieApiClient->loadByStore($this->getStoreId());
+        $session = $mollie->checkoutSessions->get($sessionId)->sessionResponse;
 
-        if ($mollie->sessions->get($sessionId)->status !== self::STATUS_COMPLETED) {
+        if ($session->status !== SessionResponseStatus::Completed) {
             return $this->paymentNotCompletedResponse();
         }
 

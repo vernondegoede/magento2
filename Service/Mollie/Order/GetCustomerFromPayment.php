@@ -14,7 +14,7 @@ use Magento\Customer\Api\Data\CustomerInterfaceFactory;
 use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Quote\Api\Data\CartInterface;
 use Magento\Store\Model\StoreManagerInterface;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Models\Components\PaymentResponse;
 
 class GetCustomerFromPayment
 {
@@ -24,7 +24,7 @@ class GetCustomerFromPayment
         private readonly CustomerInterfaceFactory $customerFactory,
     ) {}
 
-    public function execute(CartInterface $oldCart, Payment $payment): CustomerInterface
+    public function execute(CartInterface $oldCart, PaymentResponse $payment): CustomerInterface
     {
         $billingAddress = $payment->billingAddress;
 
@@ -43,14 +43,14 @@ class GetCustomerFromPayment
         $customer
             ->setWebsiteId($store->getWebsiteId())
             ->setStoreId($store->getId())
-            ->setFirstname($billingAddress->givenName ?? $shippingAddress->getFirstname())
-            ->setLastname($billingAddress->familyName ?? $shippingAddress->getLastname())
+            ->setFirstname($billingAddress?->givenName ?? $shippingAddress->getFirstname())
+            ->setLastname($billingAddress?->familyName ?? $shippingAddress->getLastname())
             ->setEmail($email);
 
         return $this->customerRepository->save($customer);
     }
 
-    private function getEmail(CartInterface $oldCart, Payment $payment): string
+    private function getEmail(CartInterface $oldCart, PaymentResponse $payment): string
     {
         $billingAddress = $payment->billingAddress;
 
@@ -58,7 +58,7 @@ class GetCustomerFromPayment
             return $oldCart->getCustomerEmail();
         }
 
-        if (is_object($billingAddress) && property_exists($billingAddress, 'email')) {
+        if ($billingAddress?->email !== null && $billingAddress->email !== '') {
             return $billingAddress->email;
         }
 
@@ -68,7 +68,7 @@ class GetCustomerFromPayment
             return $email;
         }
 
-        $consumerAccount = $payment->details->consumerAccount ?? null;
+        $consumerAccount = $payment->details?->consumerAccount;
 
         if (is_string($consumerAccount) && filter_var($consumerAccount, FILTER_VALIDATE_EMAIL)) {
             return $consumerAccount;

@@ -13,8 +13,10 @@ use Magento\Quote\Api\Data\CartInterface;
 use Magento\Quote\Model\Quote\Address\Rate;
 use Magento\Quote\Model\Quote\Address\RateFactory;
 use Magento\Tax\Model\Config as TaxConfig;
-use Mollie\Api\Resources\Payment;
-use stdClass;
+use Mollie\Api\Models\Components\PaymentLineTypeResponse;
+use Mollie\Api\Models\Components\PaymentResponse;
+use Mollie\Api\Models\Components\PaymentResponseLine;
+use Mollie\Payment\Service\Mollie\Express\ExpressPaymentResponseLine;
 
 class SetShippingOnCart
 {
@@ -25,14 +27,13 @@ class SetShippingOnCart
         private readonly TaxConfig $taxConfig,
     ) {}
 
-    public function execute(CartInterface $baseCart, CartInterface $cart, Payment $payment): void
+    public function execute(CartInterface $baseCart, CartInterface $cart, PaymentResponse $payment): void
     {
         $this->copyProductsFromBaseCart($baseCart, $cart);
 
         $hasShipping = false;
         foreach ($payment->lines ?? [] as $line) {
-            /** @var stdClass $line */
-            if ($line->type == 'shipping_fee') {
+            if ($line->type === PaymentLineTypeResponse::ShippingFee) {
                 $hasShipping = true;
                 $this->addShippingToQuote($baseCart, $cart, $line);
             }
@@ -55,7 +56,7 @@ class SetShippingOnCart
         }
     }
 
-    private function addShippingToQuote(CartInterface $baseCart, CartInterface $cart, stdClass $line): void
+    private function addShippingToQuote(CartInterface $baseCart, CartInterface $cart, PaymentResponseLine $line): void
     {
         if ($this->useSelectedShippingMethod($cart, $line)) {
             return;
@@ -68,9 +69,9 @@ class SetShippingOnCart
      * The reference is the shipping method the customer picked from the options the shipping options callback
      * returned. Keep the price Mollie charged, as the rate may have changed since.
      */
-    private function useSelectedShippingMethod(CartInterface $cart, stdClass $line): bool
+    private function useSelectedShippingMethod(CartInterface $cart, PaymentResponseLine $line): bool
     {
-        $reference = $line->reference ?? null;
+        $reference = $line instanceof ExpressPaymentResponseLine ? $line->reference : null;
         if (!is_string($reference) || $reference === '') {
             return false;
         }
@@ -89,7 +90,7 @@ class SetShippingOnCart
         return true;
     }
 
-    private function addExpressShippingRate(CartInterface $baseCart, CartInterface $cart, stdClass $line): void
+    private function addExpressShippingRate(CartInterface $baseCart, CartInterface $cart, PaymentResponseLine $line): void
     {
         $shippingMethod = 'flatrate_flatrate';
 
@@ -100,7 +101,7 @@ class SetShippingOnCart
         $shippingRate->setCode($shippingMethod);
         $shippingRate->setPrice($this->getShippingPrice($baseCart, $cart, $line));
         $shippingRate->setCarrierTitle('Express');
-        $shippingRate->setMethodTitle($line->description ?? '');
+        $shippingRate->setMethodTitle($line->description);
 
         $address->setCollectShippingRates(true)
             ->collectShippingRates()
@@ -110,7 +111,7 @@ class SetShippingOnCart
         $address->addShippingRate($shippingRate);
     }
 
-    private function getShippingPrice(CartInterface $baseCart, CartInterface $cart, stdClass $line): float
+    private function getShippingPrice(CartInterface $baseCart, CartInterface $cart, PaymentResponseLine $line): float
     {
         $paidShipping = (float)$line->totalAmount->value;
         if ($this->taxConfig->shippingPriceIncludesTax($cart->getStoreId())) {

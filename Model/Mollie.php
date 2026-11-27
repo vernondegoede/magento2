@@ -27,13 +27,21 @@ use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Payment;
 use Magento\Sales\Model\OrderRepository;
-use Mollie\Api\Exceptions\ApiException;
-use Mollie\Api\MollieApiClient;
+use Mollie\Api\Client;
+use Mollie\Api\Models\Components\Amount;
+use Mollie\Api\Models\Components\MethodId;
+use Mollie\Api\Models\Components\RefundRequest;
+use Mollie\Api\Models\Errors\APIException;
+use Mollie\Api\Models\Errors\ErrorResponseThrowable;
+use Mollie\Api\Models\Operations\CreateRefundRequest;
+use Mollie\Api\Models\Operations\GetMethodRequest;
 use Mollie\Payment\Config;
 use Mollie\Payment\Helper\General;
 use Mollie\Payment\Model\Client\Payments;
 use Mollie\Payment\Model\Client\Payments\ProcessTransaction;
 use Mollie\Payment\Model\Client\ProcessTransactionResponse;
+use Mollie\Payment\Service\Mollie\ApiExceptionHelper;
+use Mollie\Payment\Service\Mollie\IdempotencyKeyGenerator;
 use Mollie\Payment\Service\Mollie\Order\ResolvePaymentId;
 use Mollie\Payment\Service\OrderLockService;
 use Psr\Log\LoggerInterface;
@@ -47,6 +55,7 @@ class Mollie extends Adapter
 {
     public const CODE = 'mollie';
     private ManagerInterface $eventManager;
+    private IdempotencyKeyGenerator $idempotencyKeyGenerator;
 
     public function __construct(
         ManagerInterface $eventManager,
@@ -68,6 +77,7 @@ class Mollie extends Adapter
         ?ValidatorPoolInterface $validatorPool = null,
         ?CommandManagerInterface $commandExecutor = null,
         ?LoggerInterface $logger = null,
+        ?IdempotencyKeyGenerator $idempotencyKeyGenerator = null,
     ) {
         parent::__construct(
             $eventManager,
@@ -82,6 +92,7 @@ class Mollie extends Adapter
             $logger,
         );
         $this->eventManager = $eventManager;
+        $this->idempotencyKeyGenerator = $idempotencyKeyGenerator ?? new IdempotencyKeyGenerator();
     }
 
     /**
@@ -144,8 +155,16 @@ class Mollie extends Adapter
 
         $mollieApi = $this->mollieApiClient->loadByStore();
         $methodCode = str_replace('mollie_methods_', '', $method);
+        $methodId = MethodId::tryFrom($methodCode);
+        if ($methodId === null) {
+            return null;
+        }
+
         try {
-            $issuers = $mollieApi->methods->get($methodCode, ['include' => 'issuers'])->issuers;
+            $response = $mollieApi->methods->get(
+                new GetMethodRequest(methodId: $methodId, include: 'issuers'),
+            );
+            $issuers = $response->entityMethodGet?->issuers;
 
             // If the list can't be retrieved for some reason, try again.
             if (!$issuers && $count == 0) {
@@ -161,7 +180,7 @@ class Mollie extends Adapter
                 return null;
             }
         } catch (Exception $e) {
-            $this->mollieHelper->addTolog('error', $e->getMessage());
+            $this->mollieHelper->addTolog('error', ApiExceptionHelper::getMessage($e));
         }
 
         if ($this->mollieHelper->addQrOption() && $methodCode == 'ideal') {
@@ -203,16 +222,16 @@ class Mollie extends Adapter
 
     /**
      * @param $storeId
-     * @return MollieApiClient|null
+     * @return Client|null
      */
-    public function getMollieApi($storeId = null): ?MollieApiClient
+    public function getMollieApi($storeId = null): ?Client
     {
         $apiKey = $this->mollieHelper->getApiKey($storeId);
 
         try {
             return $this->loadMollieApi($apiKey);
         } catch (Exception $e) {
-            $this->mollieHelper->addTolog('error', $e->getMessage());
+            $this->mollieHelper->addTolog('error', ApiExceptionHelper::getMessage($e));
 
             return null;
         }
@@ -272,15 +291,14 @@ class Mollie extends Adapter
     }
 
     /**
-     * @param $apiKey
+     * @param string $apiKey
      *
-     * @return MollieApiClient
-     * @throws ApiException
+     * @return Client
      * @throws LocalizedException
      *
      * @deprecated Use \Mollie\Payment\Service\Mollie\MollieApiClient::loadByApiKey instead
      */
-    public function loadMollieApi(string $apiKey): MollieApiClient
+    public function loadMollieApi(string $apiKey): Client
     {
         return $this->mollieApiClient->loadByApiKey($apiKey);
     }
@@ -304,7 +322,8 @@ class Mollie extends Adapter
      *
      * @return ProcessTransactionResponse
      * @throws LocalizedException
-     * @throws ApiException
+     * @throws APIException
+     * @throws ErrorResponseThrowable
      */
     public function processTransaction($orderId, string $type = 'webhook'): ProcessTransactionResponse
     {
@@ -386,27 +405,27 @@ class Mollie extends Adapter
 
             $mollieApi = $this->loadMollieApi($apiKey);
             $transactionId = $this->resolvePaymentId->execute($mollieApi, $transactionId);
-            $payment = $mollieApi->payments->get($transactionId);
 
-            // @see https://github.com/mollie/mollie-api-php/issues/840
-            $oldHandler = set_error_handler(static fn (int $errno, string $errstr): bool => true);
-            try {
-                $refund = $payment->refund([
-                    'description' => __('Refund for order %1', $order->getIncrementId()),
-                    'amount' => [
-                        'currency' => $order->getOrderCurrencyCode(),
-                        'value' => $this->mollieHelper->formatCurrencyValue($amount, $order->getOrderCurrencyCode()),
-                    ],
-                ]);
+            $refund = $mollieApi->refunds->create(
+                new CreateRefundRequest(
+                    paymentId: $transactionId,
+                    idempotencyKey: $this->idempotencyKeyGenerator->generate(),
+                    body: new RefundRequest(
+                        amount: new Amount(
+                            currency: $order->getOrderCurrencyCode(),
+                            value: $this->mollieHelper->formatCurrencyValue($amount, $order->getOrderCurrencyCode()),
+                        ),
+                        description: (string) __('Refund for order %1', $order->getIncrementId()),
+                    ),
+                ),
+            )->refundResponse;
 
-                $order->getPayment()->setTransactionId($refund->id);
-                $order->getPayment()->setLastTransId($refund->id);
-            } finally {
-                set_error_handler($oldHandler);
-            }
+            $order->getPayment()->setTransactionId($refund->id);
+            $order->getPayment()->setLastTransId($refund->id);
         } catch (Exception $exception) {
-            $this->mollieHelper->addTolog('error', $exception->getMessage());
-            throw new LocalizedException(__('Error: not possible to create an online refund: %1', $exception->getMessage()));
+            $errorMessage = ApiExceptionHelper::getMessage($exception);
+            $this->mollieHelper->addTolog('error', $errorMessage);
+            throw new LocalizedException(__('Error: not possible to create an online refund: %1', $errorMessage));
         }
 
         return $this;

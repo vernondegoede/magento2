@@ -9,8 +9,8 @@ declare(strict_types=1);
 namespace Mollie\Payment\Service\Mollie\Order;
 
 use Magento\Framework\Exception\LocalizedException;
-use Mollie\Api\Http\Requests\DynamicGetRequest;
-use Mollie\Api\MollieApiClient;
+use Mollie\Api\Client;
+use Mollie\Payment\Service\Mollie\RawApiRequest;
 
 /**
  * Orders placed on the module's V2 stored an Orders API id (ord_...) in mollie_transaction_id. V3 dropped the
@@ -26,10 +26,11 @@ class ResolvePaymentId
 
     public function __construct(
         private LegacyOrderTransactionId $legacyOrderTransactionId,
+        private RawApiRequest $rawApiRequest,
     ) {
     }
 
-    public function execute(MollieApiClient $mollieApi, string $transactionId): string
+    public function execute(Client $mollieApi, string $transactionId): string
     {
         if (!$this->legacyOrderTransactionId->matches($transactionId)) {
             return $transactionId;
@@ -37,30 +38,37 @@ class ResolvePaymentId
 
         $payments = $this->fetchEmbeddedPayments($mollieApi, $transactionId);
 
-        return $this->selectPayment($payments, $transactionId)->id;
+        return $this->selectPayment($payments, $transactionId)['id'];
     }
 
     /**
-     * @return \stdClass[]
+     * @return array<int, array<string, mixed>>
      */
-    private function fetchEmbeddedPayments(MollieApiClient $mollieApi, string $transactionId): array
+    private function fetchEmbeddedPayments(Client $mollieApi, string $transactionId): array
     {
-        $attributes = $mollieApi->send(
-            new DynamicGetRequest('orders/' . $transactionId, ['embed' => 'payments']),
-        )->toArray();
+        $attributes = $this->rawApiRequest->sendJson(
+            $mollieApi,
+            'GET',
+            '/v2/orders/' . $transactionId,
+            ['embed' => 'payments'],
+        );
 
-        $embedded = (array) ($attributes['_embedded'] ?? []);
+        $embedded = $attributes['_embedded'] ?? [];
+        if (!is_array($embedded)) {
+            return [];
+        }
 
-        return $embedded['payments'] ?? [];
+        return is_array($embedded['payments'] ?? null) ? $embedded['payments'] : [];
     }
 
     /**
-     * @param \stdClass[] $payments
+     * @param array<int, array<string, mixed>> $payments
+     * @return array<string, mixed>
      */
-    private function selectPayment(array $payments, string $transactionId): \stdClass
+    private function selectPayment(array $payments, string $transactionId): array
     {
         foreach ($payments as $payment) {
-            if (in_array($payment->status, self::SETTLED_STATUSES, true)) {
+            if (in_array($payment['status'] ?? null, self::SETTLED_STATUSES, true)) {
                 return $payment;
             }
         }

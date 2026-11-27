@@ -10,13 +10,15 @@ namespace Mollie\Payment\Model\Client\Payments;
 
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Sales\Api\Data\OrderInterface;
-use Mollie\Api\Types\PaymentStatus;
+use Mollie\Api\Models\Components\PaymentResponseStatus;
+use Mollie\Api\Models\Operations\GetPaymentRequest;
 use Mollie\Payment\Helper\General as MollieHelper;
 use Mollie\Payment\Model\Client\ProcessTransactionResponse;
 use Mollie\Payment\Model\Client\ProcessTransactionResponseFactory;
 use Mollie\Payment\Service\Mollie\MollieApiClient;
 use Mollie\Payment\Service\Mollie\Order\GetTransactionId;
 use Mollie\Payment\Service\Mollie\Order\ResolvePaymentId;
+use Mollie\Payment\Service\Mollie\PaymentResponseHelper;
 
 class ProcessTransaction
 {
@@ -36,9 +38,9 @@ class ProcessTransaction
         $mollieApi = $this->mollieApiClient->loadByStore((int) $magentoOrder->getStoreId());
         $transactionId = $this->getTransactionId->forOrder($magentoOrder);
         $paymentId = $this->resolvePaymentId->execute($mollieApi, $transactionId);
-        $molliePayment = $mollieApi->payments->get($paymentId);
+        $molliePayment = $mollieApi->payments->get(new GetPaymentRequest(paymentId: $paymentId))->paymentResponse;
         $this->mollieHelper->addTolog($type, $molliePayment);
-        $status = $molliePayment->status;
+        $status = $molliePayment->status->value;
 
         $response = $this->processTransactionResponseFactory->create([
             'success' => true,
@@ -55,7 +57,11 @@ class ProcessTransaction
             $response,
         );
 
-        $isPaid = in_array($status, [PaymentStatus::PAID, PaymentStatus::AUTHORIZED], true);
+        $isPaid = in_array(
+            $molliePayment->status,
+            [PaymentResponseStatus::Paid, PaymentResponseStatus::Authorized],
+            true,
+        );
 
         if ($isPaid) {
             $response = $this->paymentProcessors->process(
@@ -67,7 +73,7 @@ class ProcessTransaction
             );
         }
 
-        if ($molliePayment->hasRefunds()) {
+        if (PaymentResponseHelper::hasRefunds($molliePayment)) {
             return $this->paymentProcessors->process(
                 'refunded',
                 $magentoOrder,
@@ -81,7 +87,7 @@ class ProcessTransaction
             return $response;
         }
 
-        if ($status == 'open') {
+        if ($molliePayment->status === PaymentResponseStatus::Open) {
             return $this->paymentProcessors->process(
                 'open',
                 $magentoOrder,
@@ -91,7 +97,7 @@ class ProcessTransaction
             );
         }
 
-        if ($status == 'pending') {
+        if ($molliePayment->status === PaymentResponseStatus::Pending) {
             return $this->paymentProcessors->process(
                 'pending',
                 $magentoOrder,
@@ -101,7 +107,7 @@ class ProcessTransaction
             );
         }
 
-        if ($status == 'expired') {
+        if ($molliePayment->status === PaymentResponseStatus::Expired) {
             return $this->paymentProcessors->process(
                 'expired',
                 $magentoOrder,
@@ -111,7 +117,11 @@ class ProcessTransaction
             );
         }
 
-        if ($status == 'canceled' || $status == 'failed' || $status == 'expired') {
+        if (in_array(
+            $molliePayment->status,
+            [PaymentResponseStatus::Canceled, PaymentResponseStatus::Failed, PaymentResponseStatus::Expired],
+            true,
+        )) {
             return $this->paymentProcessors->process(
                 'failed',
                 $magentoOrder,

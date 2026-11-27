@@ -10,7 +10,7 @@ namespace Mollie\Payment\Model\Client\Payments;
 
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Sales\Api\Data\OrderInterface;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Models\Components\PaymentResponse;
 use Mollie\Payment\Config;
 use Mollie\Payment\Model\Client\PaymentProcessorInterface;
 use Mollie\Payment\Model\Client\ProcessTransactionResponse;
@@ -27,7 +27,7 @@ class PaymentProcessors
     public function process(
         string $event,
         OrderInterface $magentoOrder,
-        Payment $molliePayment,
+        PaymentResponse $molliePayment,
         string $type,
         ProcessTransactionResponse $response,
     ): ?ProcessTransactionResponse {
@@ -54,17 +54,14 @@ class PaymentProcessors
         return $response;
     }
 
-    /**
-     * @param Payment $molliePayment
-     * @param OrderInterface $magentoOrder
-     * @param string $type
-     * @return ProcessTransactionResponse
-     */
-    protected function returnResponse(Payment $molliePayment, OrderInterface $magentoOrder, string $type): ProcessTransactionResponse
-    {
+    protected function returnResponse(
+        PaymentResponse $molliePayment,
+        OrderInterface $magentoOrder,
+        string $type
+    ): ProcessTransactionResponse {
         return $this->processTransactionResponseFactory->create([
             'success' => false,
-            'status' => $molliePayment->status,
+            'status' => $molliePayment->status->value,
             'order_id' => $magentoOrder->getEntityId(),
             'type' => $type,
         ]);

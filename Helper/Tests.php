@@ -11,8 +11,10 @@ namespace Mollie\Payment\Helper;
 use Exception;
 use Magento\Framework\App\Helper\AbstractHelper;
 use Magento\Framework\App\Helper\Context;
-use Mollie\Api\Exceptions\ApiException;
-use Mollie\Api\Types\MethodQuery;
+use Mollie\Api\Models\Errors\APIException;
+use Mollie\Api\Models\Errors\ErrorResponseThrowable;
+use Mollie\Payment\Service\Mollie\ApiExceptionHelper;
+use Mollie\Payment\Service\Mollie\ListMethods;
 use Mollie\Payment\Service\Mollie\MollieApiClient;
 
 /**
@@ -25,6 +27,7 @@ class Tests extends AbstractHelper
     public function __construct(
         Context $context,
         private MollieApiClient $mollieApiClient,
+        private ListMethods $listMethods,
     ) {
         parent::__construct($context);
     }
@@ -48,18 +51,21 @@ class Tests extends AbstractHelper
                 try {
                     $availableMethods = [];
                     $mollieApi = $this->mollieApiClient->loadByApiKey($testKey);
-                    $methods = $mollieApi->methods->allEnabled([
-                        'includeWallets' => MethodQuery::WALLETS,
+                    $methods = $this->listMethods->execute($mollieApi, [
+                        'includeWallets' => ListMethods::WALLETS,
                     ]);
 
                     foreach ($methods as $apiMethod) {
-                        $availableMethods[] = ucfirst($apiMethod->id);
+                        $id = $apiMethod['id'] ?? null;
+                        if (is_string($id) && $id !== '') {
+                            $availableMethods[] = ucfirst($id);
+                        }
                     }
 
                     try {
-                        $mollieApi->terminals->page();
+                        $mollieApi->terminals->list()->current();
                         $availableMethods[] = 'Point of sale';
-                    } catch (ApiException $exception) {
+                    } catch (APIException|ErrorResponseThrowable) {
                     }
 
                     sort($availableMethods);
@@ -74,7 +80,7 @@ class Tests extends AbstractHelper
 
                     $results[] = '<span class="mollie-success">' . __('Test API-key: Success!') . $methodsMsg . '</span>';
                 } catch (Exception $e) {
-                    $results[] = '<span class="mollie-error">' . __('Test API-key: %1', $e->getMessage()) . '</span>';
+                    $results[] = '<span class="mollie-error">' . __('Test API-key: %1', ApiExceptionHelper::getMessage($e)) . '</span>';
                 }
             }
         }
@@ -88,18 +94,21 @@ class Tests extends AbstractHelper
                 try {
                     $availableMethods = [];
                     $mollieApi = $this->mollieApiClient->loadByApiKey($liveKey);
-                    $methods = $mollieApi->methods->allEnabled([
-                        'includeWallets' => MethodQuery::WALLETS,
+                    $methods = $this->listMethods->execute($mollieApi, [
+                        'includeWallets' => ListMethods::WALLETS,
                     ]);
 
                     foreach ($methods as $apiMethod) {
-                        $availableMethods[] = ucfirst($apiMethod->id);
+                        $id = $apiMethod['id'] ?? null;
+                        if (is_string($id) && $id !== '') {
+                            $availableMethods[] = ucfirst($id);
+                        }
                     }
 
                     try {
-                        $mollieApi->terminals->page();
+                        $mollieApi->terminals->list()->current();
                         $availableMethods[] = 'Point of sale';
-                    } catch (ApiException $exception) {
+                    } catch (APIException|ErrorResponseThrowable) {
                     }
 
                     sort($availableMethods);
@@ -114,7 +123,7 @@ class Tests extends AbstractHelper
 
                     $results[] = '<span class="mollie-success">' . __('Live API-key: Success!') . $methodsMsg . '</span>';
                 } catch (Exception $e) {
-                    $results[] = '<span class="mollie-error">' . __('Live API-key: %1', $e->getMessage()) . '</span>';
+                    $results[] = '<span class="mollie-error">' . __('Live API-key: %1', ApiExceptionHelper::getMessage($e)) . '</span>';
                 }
             }
         }

@@ -12,7 +12,8 @@ namespace Mollie\Payment\Service\Mollie;
 use Magento\Framework\Event\ManagerInterface;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Model\Order\Payment;
-use Mollie\Api\Exceptions\ApiException;
+use Mollie\Api\Models\Errors\APIException;
+use Mollie\Api\Models\Errors\ErrorResponseThrowable;
 use Mollie\Payment\Config;
 use Mollie\Payment\Model\Client\Payments as PaymentsApi;
 use Mollie\Payment\Service\Mollie\Customer\ForgetMollieCustomerId;
@@ -46,7 +47,7 @@ class StartTransaction
 
             try {
                 return $this->sendTransaction($order);
-            } catch (ApiException $exception) {
+            } catch (APIException|ErrorResponseThrowable $exception) {
                 return $this->retryWithNewMollieCustomer($order, $exception);
             }
         });
@@ -59,8 +60,10 @@ class StartTransaction
         return $this->paymentsApi->startTransaction($order, $mollieApi);
     }
 
-    private function retryWithNewMollieCustomer(OrderInterface $order, ApiException $exception): ?string
-    {
+    private function retryWithNewMollieCustomer(
+        OrderInterface $order,
+        APIException|ErrorResponseThrowable $exception
+    ): ?string {
         if (!$this->mollieCustomerNoLongerExists->check($exception)) {
             throw $exception;
         }

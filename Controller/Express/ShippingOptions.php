@@ -18,7 +18,8 @@ use Magento\Framework\Controller\Result\JsonFactory;
 use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Api\Data\CartInterface;
 use Magento\Store\Model\StoreManagerInterface;
-use Mollie\Api\Exceptions\ApiException;
+use Mollie\Api\Models\Errors\APIException;
+use Mollie\Api\Models\Errors\ErrorResponseThrowable;
 use Mollie\Payment\Config;
 use Mollie\Payment\Service\Mollie\Express\ProductPaymentMetadata;
 use Mollie\Payment\Service\Mollie\Express\ProductQuote;
@@ -129,8 +130,10 @@ class ShippingOptions implements HttpPostActionInterface, CsrfAwareActionInterfa
     private function getProductCart(string $sessionId): ?CartInterface
     {
         try {
-            $session = $this->mollieApiClient->loadByStore($this->getStoreId())->sessions->get($sessionId);
-        } catch (ApiException $exception) {
+            $session = $this->mollieApiClient->loadByStore($this->getStoreId())
+                ->checkoutSessions->get($sessionId)
+                ->sessionResponse;
+        } catch (APIException|ErrorResponseThrowable) {
             return null;
         }
 

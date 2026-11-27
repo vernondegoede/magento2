@@ -47,7 +47,7 @@ class Apikey extends Action implements HttpPostActionInterface
     {
         $result = $this->resultJsonFactory->create();
 
-        if (!class_exists('Mollie\Api\MollieApiClient')) {
+        if (!class_exists(\Mollie\Api\Client::class)) {
             $apiErrorMsg = ['<span class="mollie-error">' . $this->mollieHelper->getPhpApiErrorMessage() . '</span>'];
             $result->setData(['success' => false, 'msg' => $apiErrorMsg]);
 

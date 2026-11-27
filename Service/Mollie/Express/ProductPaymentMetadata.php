@@ -34,6 +34,10 @@ class ProductPaymentMetadata
 
     public static function isProductPayment(mixed $metadata): bool
     {
+        if (is_array($metadata)) {
+            return ($metadata[self::KEY_PLACEMENT] ?? null) === self::PLACEMENT;
+        }
+
         return $metadata instanceof stdClass
             && ($metadata->{self::KEY_PLACEMENT} ?? null) === self::PLACEMENT;
     }
@@ -47,7 +51,7 @@ class ProductPaymentMetadata
             throw new LocalizedException(__('The Mollie session was not started from a product page.'));
         }
 
-        $data = json_decode((string)json_encode($metadata), true);
+        $data = is_array($metadata) ? $metadata : json_decode((string)json_encode($metadata), true);
         $customerId = $data[self::KEY_CUSTOMER_ID] ?? null;
 
         return new self(

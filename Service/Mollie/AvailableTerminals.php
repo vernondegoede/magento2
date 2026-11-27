@@ -9,8 +9,9 @@ declare(strict_types=1);
 
 namespace Mollie\Payment\Service\Mollie;
 
-use Mollie\Api\Exceptions\ApiException;
-use Mollie\Api\Resources\Terminal;
+use Mollie\Api\Models\Components\ListEntityTerminalStatus;
+use Mollie\Api\Models\Errors\APIException;
+use Mollie\Api\Models\Errors\ErrorResponseThrowable;
 
 class AvailableTerminals
 {
@@ -31,27 +32,27 @@ class AvailableTerminals
     {
         try {
             $mollieApiClient = $this->mollieApiClient->loadByStore($storeId);
-            $terminals = $mollieApiClient->terminals->page();
-        } catch (ApiException $exception) {
-            return [];
-        }
+            $output = [];
 
-        $output = [];
-        /** @var Terminal $terminal */
-        foreach ($terminals as $terminal) {
-            if (!$terminal->isActive()) {
-                continue;
+            foreach ($mollieApiClient->terminals->list() as $page) {
+                foreach ($page->object?->embedded->terminals ?? [] as $terminal) {
+                    if ($terminal->status !== ListEntityTerminalStatus::Active) {
+                        continue;
+                    }
+
+                    $output[] = [
+                        'id' => $terminal->id,
+                        'brand' => $terminal->brand?->value ?? '',
+                        'model' => $terminal->model?->value ?? '',
+                        'serialNumber' => $terminal->serialNumber,
+                        'description' => $terminal->description,
+                    ];
+                }
             }
 
-            $output[] = [
-                'id' => $terminal->id,
-                'brand' => $terminal->brand,
-                'model' => $terminal->model,
-                'serialNumber' => $terminal->serialNumber,
-                'description' => $terminal->description,
-            ];
+            return $output;
+        } catch (APIException|ErrorResponseThrowable) {
+            return [];
         }
-
-        return $output;
     }
 }

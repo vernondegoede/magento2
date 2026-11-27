@@ -14,8 +14,9 @@ use Magento\Quote\Api\Data\AddressInterfaceFactory;
 use Magento\Quote\Api\Data\CartInterface;
 use Magento\Quote\Model\Quote\Address;
 use Magento\Store\Model\ScopeInterface;
-use Mollie\Api\Resources\Payment;
-use stdClass;
+use Mollie\Api\Models\Components\PaymentAddress;
+use Mollie\Api\Models\Components\PaymentResponse;
+use Mollie\Api\Models\Components\PaymentResponseBillingAddress;
 
 class SetAddressesOnCart
 {
@@ -28,7 +29,7 @@ class SetAddressesOnCart
         private readonly ScopeConfigInterface $scopeConfig,
     ) {}
 
-    public function execute(CartInterface $oldCart, CartInterface $cart, Payment $payment): void
+    public function execute(CartInterface $oldCart, CartInterface $cart, PaymentResponse $payment): void
     {
         $shippingAddress = $this->getCompleteAddress($payment->shippingAddress);
         $billingAddress = $this->getCompleteAddress($payment->billingAddress);
@@ -55,7 +56,7 @@ class SetAddressesOnCart
             );
         }
 
-        $email = $payment->billingAddress->email ?? $payment->shippingAddress->email ?? null;
+        $email = $payment->billingAddress?->email ?? $payment->shippingAddress?->email;
         if (is_string($email) && $email !== '') {
             $cart->setCustomerEmail($email);
         }
@@ -65,9 +66,10 @@ class SetAddressesOnCart
      * When only requiredCustomerDetails "email" is collected, Mollie returns a billingAddress that holds nothing
      * but the email. That is not an address we can ship to.
      */
-    private function getCompleteAddress(?stdClass $address): ?stdClass
-    {
-        if ($address === null || !property_exists($address, 'givenName')) {
+    private function getCompleteAddress(
+        PaymentAddress|PaymentResponseBillingAddress|null $address
+    ): PaymentAddress|PaymentResponseBillingAddress|null {
+        if ($address === null || $address->givenName === null || $address->givenName === '') {
             return null;
         }
 
@@ -77,7 +79,7 @@ class SetAddressesOnCart
     private function setAddressOnCart(
         string $type,
         CartInterface $cart,
-        stdClass $address,
+        PaymentAddress|PaymentResponseBillingAddress $address,
         ?AddressInterface $oldAddress
     ): void {
         $cartAddress = $this->addressFactory->create();
@@ -86,15 +88,15 @@ class SetAddressesOnCart
         $cartAddress->setStreet(array_filter(
             [
                 $address->streetAndNumber,
-                $address->streetAdditional ?? null,
+                $address->streetAdditional,
             ],
-            static fn ($line): bool => $line !== null,
+            static fn (?string $line): bool => $line !== null,
         ));
         $cartAddress->setPostcode($address->postalCode);
         $cartAddress->setTelephone($this->getTelephone($address, $oldAddress, (int)$cart->getStoreId()));
         $cartAddress->setCity($address->city);
 
-        if (property_exists($address, 'region')) {
+        if ($address->region !== null) {
             $cartAddress->setRegion($address->region);
         }
 
@@ -113,8 +115,11 @@ class SetAddressesOnCart
      * Mollie does not return a phone number for Express Components, while Magento requires one by default. Fall back
      * to the phone on the original cart, and to a placeholder so the paid order can still be created.
      */
-    private function getTelephone(stdClass $address, ?AddressInterface $oldAddress, int $storeId): ?string
-    {
+    private function getTelephone(
+        PaymentAddress|PaymentResponseBillingAddress $address,
+        ?AddressInterface $oldAddress,
+        int $storeId
+    ): ?string {
         $telephone = $address->phone ?? $oldAddress?->getTelephone();
         if (is_string($telephone) && $telephone !== '') {
             return $telephone;

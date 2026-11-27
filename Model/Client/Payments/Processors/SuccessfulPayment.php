@@ -15,7 +15,7 @@ use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Invoice;
 use Magento\Sales\Model\Order\Payment\Transaction;
 use Magento\Sales\Model\Order\Payment\Transaction\ManagerInterface as TransactionManagerInterface;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Models\Components\PaymentResponse;
 use Mollie\Payment\Config;
 use Mollie\Payment\Model\Client\PaymentProcessorInterface;
 use Mollie\Payment\Model\Client\Payments;
@@ -24,9 +24,10 @@ use Mollie\Payment\Model\Client\ProcessTransactionResponseFactory;
 use Mollie\Payment\Service\Mollie\Order\CanRegisterCaptureNotification;
 use Mollie\Payment\Service\Mollie\Order\CanUseManualCapture;
 use Mollie\Payment\Service\Mollie\Order\IsPaymentAlreadyProcessed;
+use Mollie\Payment\Service\Mollie\PaymentResponseHelper;
 use Mollie\Payment\Service\Order\OrderAmount;
-use Mollie\Payment\Service\Order\OrderStatePromotion;
 use Mollie\Payment\Service\Order\OrderCommentHistory;
+use Mollie\Payment\Service\Order\OrderStatePromotion;
 use Mollie\Payment\Service\Order\SendOrderEmails;
 use Mollie\Payment\Service\Order\TransactionProcessor;
 use Mollie\Payment\Service\Order\Uncancel;
@@ -52,19 +53,21 @@ class SuccessfulPayment implements PaymentProcessorInterface
 
     public function process(
         OrderInterface $magentoOrder,
-        Payment $molliePayment,
+        PaymentResponse $molliePayment,
         string $type,
         ProcessTransactionResponse $response,
     ): ?ProcessTransactionResponse {
-        $amount = $molliePayment->amount->value;
+        $amount = (float) $molliePayment->amount->value;
         $currency = $molliePayment->amount->currency;
 
-        if ($molliePayment->hasChargebacks()) {
+        if (PaymentResponseHelper::hasChargebacks($molliePayment)) {
             $this->orderCommentHistory->add(
                 $magentoOrder,
                 __(
                     'Mollie: Received a chargeback with an amount of %1',
-                    $magentoOrder->getBaseCurrency()->formatTxt($molliePayment->getAmountChargedBack()),
+                    $magentoOrder->getBaseCurrency()->formatTxt(
+                        PaymentResponseHelper::getAmountChargedBack($molliePayment),
+                    ),
                 ),
             );
 
@@ -101,7 +104,7 @@ class SuccessfulPayment implements PaymentProcessorInterface
             $this->uncancel->execute($magentoOrder);
         }
 
-        if (abs($amount - $orderAmount['value']) < 0.01) {
+        if (abs($amount - (float) $orderAmount['value']) < 0.01) {
             $this->handlePayment($magentoOrder, $molliePayment, $type);
         }
 
@@ -122,7 +125,7 @@ class SuccessfulPayment implements PaymentProcessorInterface
         ]);
     }
 
-    private function handlePayment(OrderInterface $magentoOrder, Payment $molliePayment, string $type): void
+    private function handlePayment(OrderInterface $magentoOrder, PaymentResponse $molliePayment, string $type): void
     {
         /** @var PaymentInterface|Order\Payment $payment */
         $payment = $magentoOrder->getPayment();
@@ -160,9 +163,9 @@ class SuccessfulPayment implements PaymentProcessorInterface
      * again would turn the capture of a paid payment into an open authorization, or reopen an authorization that is
      * already closed. So the authorization is only registered once, while the payment is actually authorized.
      */
-    private function canRegisterAuthorization(OrderInterface $magentoOrder, Payment $molliePayment): bool
+    private function canRegisterAuthorization(OrderInterface $magentoOrder, PaymentResponse $molliePayment): bool
     {
-        if (!$molliePayment->isAuthorized()) {
+        if (!PaymentResponseHelper::isAuthorized($molliePayment)) {
             return false;
         }
 
@@ -173,13 +176,14 @@ class SuccessfulPayment implements PaymentProcessorInterface
         );
     }
 
-    private function registerCaptureNotification(Payment $molliePayment, OrderInterface $magentoOrder): void
+    private function registerCaptureNotification(PaymentResponse $molliePayment, OrderInterface $magentoOrder): void
     {
-        if ($molliePayment->getAmountCaptured() != 0.0) {
+        $amountCaptured = PaymentResponseHelper::getAmountCaptured($molliePayment);
+        if ($amountCaptured != 0.0) {
             $magentoOrder->addCommentToStatusHistory(
                 __(
                     'Successfully captured amount of %1.',
-                    $magentoOrder->getBaseCurrency()->formatTxt($molliePayment->getAmountCaptured()),
+                    $magentoOrder->getBaseCurrency()->formatTxt($amountCaptured),
                 ),
             );
         }

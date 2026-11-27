@@ -10,7 +10,8 @@ declare(strict_types=1);
 namespace Mollie\Payment\Service\Mollie\Order;
 
 use Magento\Sales\Api\Data\OrderInterface;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Models\Components\PaymentResponse;
+use Mollie\Payment\Service\Mollie\PaymentResponseHelper;
 
 class CanRegisterCaptureNotification
 {
@@ -20,7 +21,7 @@ class CanRegisterCaptureNotification
     ) {
     }
 
-    public function execute(OrderInterface $order, Payment $molliePayment): bool
+    public function execute(OrderInterface $order, PaymentResponse $molliePayment): bool
     {
         if (!$this->canUseManualCapture->execute($order)) {
             return true;
@@ -32,6 +33,6 @@ class CanRegisterCaptureNotification
             return false;
         }
 
-        return $molliePayment->getAmountCaptured() !== 0.0;
+        return PaymentResponseHelper::getAmountCaptured($molliePayment) !== 0.0;
     }
 }

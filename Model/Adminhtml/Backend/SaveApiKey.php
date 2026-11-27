@@ -16,10 +16,10 @@ use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\Model\Context;
 use Magento\Framework\Model\ResourceModel\AbstractResource;
 use Magento\Framework\Registry;
-use Mollie\Api\MollieApiClient;
 use Mollie\Payment\Api\ApiKeyFallbackRepositoryInterface;
 use Mollie\Payment\Api\Data\ApiKeyFallbackInterface;
 use Mollie\Payment\Api\Data\ApiKeyFallbackInterfaceFactory;
+use Mollie\Payment\Service\Mollie\MollieApiClient;
 
 class SaveApiKey extends Encrypted
 {
@@ -37,6 +37,7 @@ class SaveApiKey extends Encrypted
         private ApiKeyFallbackRepositoryInterface $apiKeyFallbackRepository,
         private ApiKeyFallbackInterfaceFactory $apiKeyFallbackFactory,
         private UpdateProfileId $updateProfileId,
+        private MollieApiClient $mollieApiClient,
         ?AbstractResource $resource = null,
         ?AbstractDb $resourceCollection = null,
         array $data = [],
@@ -62,7 +63,7 @@ class SaveApiKey extends Encrypted
 
         if ($this->getValue() !== '******' && $this->getOldValue() != $value) {
             // Validate the new API key before saving.
-            (new MollieApiClient())->setApiKey($value);
+            $this->mollieApiClient->validateApiKey($value);
 
             $this->shouldUpdateProfileId = $value;
 

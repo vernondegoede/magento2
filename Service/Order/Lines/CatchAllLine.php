@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Mollie\Payment\Service\Order\Lines;
 
 use Magento\Sales\Api\Data\OrderInterface;
-use Mollie\Api\Types\OrderLineType;
+use Mollie\Api\Models\Components\PaymentLineType;
 use Mollie\Payment\Helper\General;
 use Mollie\Payment\Logger\MollieLogger;
 
@@ -38,7 +38,7 @@ class CatchAllLine
 
         return [
             'item_id' => '',
-            'type' => $this->isSurcharge($difference) ? OrderLineType::SURCHARGE : OrderLineType::DISCOUNT,
+            'type' => $this->isSurcharge($difference) ? PaymentLineType::Surcharge->value : PaymentLineType::Discount->value,
             'description' => $this->getDescription($difference),
             'quantity' => 1,
             'unitPrice' => $this->mollieHelper->getAmountArray($currency, $difference),

@@ -15,7 +15,7 @@ use Magento\Quote\Api\Data\CartInterface;
 use Magento\Quote\Api\Data\CartInterfaceFactory;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Models\Components\PaymentResponse;
 use Mollie\Payment\Api\Data\PaymentTokenInterface;
 use Mollie\Payment\Api\PaymentTokenRepositoryInterface;
 use Mollie\Payment\Config;
@@ -38,7 +38,7 @@ class ConvertComponentsPaymentToOrder
         private readonly SetShippingOnCart $setShippingOnCart,
     ) {}
 
-    public function execute(CartInterface $baseCart, Payment $payment): OrderInterface
+    public function execute(CartInterface $baseCart, PaymentResponse $payment): OrderInterface
     {
         $this->config->addToLog('Converting express payment to order', [
             'payment_id' => $payment->id,
@@ -69,7 +69,7 @@ class ConvertComponentsPaymentToOrder
         return $order;
     }
 
-    private function placeOrder(CartInterface $cart, Payment $payment): OrderInterface
+    private function placeOrder(CartInterface $cart, PaymentResponse $payment): OrderInterface
     {
         $order = $this->cartManagement->submit($cart);
         $order->setMollieTransactionId($payment->id);
@@ -87,7 +87,7 @@ class ConvertComponentsPaymentToOrder
         }
     }
 
-    private function getCustomer(CartInterface $oldCart, Payment $payment): CustomerInterface
+    private function getCustomer(CartInterface $oldCart, PaymentResponse $payment): CustomerInterface
     {
         /** @var CustomerInterface $customer */
         $customer = $oldCart->getCustomer();

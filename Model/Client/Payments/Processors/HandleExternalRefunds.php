@@ -14,11 +14,13 @@ use Magento\Sales\Api\Data\InvoiceInterface;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderStatusHistoryRepositoryInterface;
 use Magento\Sales\Api\TransactionRepositoryInterface;
-use Mollie\Api\Resources\Payment;
-use Mollie\Api\Resources\Refund;
+use Mollie\Api\Models\Components\ListRefundResponse;
+use Mollie\Api\Models\Components\PaymentResponse;
+use Mollie\Api\Models\Operations\ListRefundsRequest;
 use Mollie\Payment\Config;
 use Mollie\Payment\Model\Client\PaymentProcessorInterface;
 use Mollie\Payment\Model\Client\ProcessTransactionResponse;
+use Mollie\Payment\Service\Mollie\MollieApiClient;
 use Mollie\Payment\Service\Mollie\Order\CreateCreditmemoFromRefund;
 use Mollie\Payment\Service\Order\OrderCommentHistory;
 
@@ -32,11 +34,12 @@ class HandleExternalRefunds implements PaymentProcessorInterface
         private readonly Config $config,
         private readonly OrderCommentHistory $orderCommentHistory,
         private readonly OrderStatusHistoryRepositoryInterface $orderStatusHistoryRepository,
+        private readonly MollieApiClient $mollieApiClient,
     ) {}
 
     public function process(
         OrderInterface $magentoOrder,
-        Payment $molliePayment,
+        PaymentResponse $molliePayment,
         string $type,
         ProcessTransactionResponse $response,
     ): ?ProcessTransactionResponse {
@@ -63,26 +66,33 @@ class HandleExternalRefunds implements PaymentProcessorInterface
     }
 
     /**
-     * @return Refund[]
+     * @return ListRefundResponse[]
      */
-    private function getUnprocessedRefunds(OrderInterface $order, Payment $molliePayment): array
+    private function getUnprocessedRefunds(OrderInterface $order, PaymentResponse $molliePayment): array
     {
         $transactions = $this->getTransactions($order);
+        $mollieApi = $this->mollieApiClient->loadByStore(storeId($order->getStoreId()));
 
-        return array_values(array_filter(
-            iterator_to_array($molliePayment->refunds()),
-            fn (Refund $refund): bool => !in_array($refund->id, $transactions, true),
-        ));
+        $refunds = [];
+        foreach ($mollieApi->refunds->list(new ListRefundsRequest(paymentId: $molliePayment->id)) as $page) {
+            foreach ($page->object?->embedded->refunds ?? [] as $refund) {
+                if (!in_array($refund->id, $transactions, true)) {
+                    $refunds[] = $refund;
+                }
+            }
+        }
+
+        return $refunds;
     }
 
     /**
-     * @param Refund[] $refunds
+     * @param ListRefundResponse[] $refunds
      */
     private function addCommentsForSkippedRefunds(OrderInterface $order, array $refunds): void
     {
         $newRefunds = array_filter(
             $refunds,
-            fn (Refund $refund): bool => !$this->isRefundInOrderHistory($order, $refund),
+            fn (ListRefundResponse $refund): bool => !$this->isRefundInOrderHistory($order, $refund),
         );
 
         foreach ($newRefunds as $refund) {
@@ -97,7 +107,7 @@ class HandleExternalRefunds implements PaymentProcessorInterface
         }
     }
 
-    private function isRefundInOrderHistory(OrderInterface $order, Refund $refund): bool
+    private function isRefundInOrderHistory(OrderInterface $order, ListRefundResponse $refund): bool
     {
         $searchCriteria = $this->searchCriteriaBuilder
             ->addFilter('parent_id', $order->getEntityId())

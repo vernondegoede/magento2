@@ -10,7 +10,8 @@ namespace Mollie\Payment\Webapi;
 
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Sales\Api\OrderRepositoryInterface;
-use Mollie\Api\Exceptions\ApiException;
+use Mollie\Api\Models\Errors\APIException;
+use Mollie\Api\Models\Errors\ErrorResponseThrowable;
 use Mollie\Payment\Api\PaymentTokenRepositoryInterface;
 use Mollie\Payment\Api\Webapi\StartTransactionRequestInterface;
 use Mollie\Payment\Service\Order\Transaction;
@@ -28,7 +29,8 @@ class StartTransaction implements StartTransactionRequestInterface
      * @param string $token
      * @return string
      * @throws LocalizedException
-     * @throws ApiException
+     * @throws APIException
+     * @throws ErrorResponseThrowable
      */
     public function execute(string $token): string
     {

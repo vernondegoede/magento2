@@ -19,7 +19,7 @@ use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
 use Magento\Store\Api\Data\StoreInterface;
 use Magento\Store\Model\StoreManagerInterface;
-use Mollie\Api\Types\PaymentStatus;
+use Mollie\Api\Models\Components\PaymentResponseStatus;
 use Mollie\Payment\Config;
 use Mollie\Payment\Model\Client\ProcessTransactionResponse;
 use Mollie\Payment\Model\Methods\Paymentlink;
@@ -126,7 +126,7 @@ class ProcessPendingOrders
         OrderInterface $order,
         ProcessTransactionResponse $result,
     ): bool {
-        return $result->getStatus() === PaymentStatus::EXPIRED && $this->hasValidPaymentLink($order);
+        return $result->getStatus() === PaymentResponseStatus::Expired->value && $this->hasValidPaymentLink($order);
     }
 
     private function hasValidPaymentLink(OrderInterface $order): bool

@@ -20,18 +20,22 @@ use Magento\Framework\Exception\NotFoundException;
 use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Api\Data\CartInterface;
 use Magento\Sales\Api\Data\OrderInterface;
-use Mollie\Api\Resources\Payment;
+use Magento\Store\Model\StoreManagerInterface;
+use Mollie\Api\Models\Components\PaymentResponse;
+use Mollie\Api\Models\Components\PaymentResponseStatus;
+use Mollie\Api\Models\Operations\UpdatePaymentRequest;
+use Mollie\Api\Models\Operations\UpdatePaymentRequestBody;
 use Mollie\Payment\Config;
 use Mollie\Payment\Model\Mollie;
-use Magento\Store\Model\StoreManagerInterface;
 use Mollie\Payment\Service\LockService;
 use Mollie\Payment\Service\Mollie\Express\ProductPaymentMetadata;
 use Mollie\Payment\Service\Mollie\Express\ProductPaymentToken;
 use Mollie\Payment\Service\Mollie\Express\ProductQuote;
+use Mollie\Payment\Service\Mollie\MollieApiClient;
 use Mollie\Payment\Service\Mollie\Order\ConvertComponentsPaymentToOrder;
 use Mollie\Payment\Service\Mollie\Order\GetOrderByTransactionId;
+use Mollie\Payment\Service\Mollie\PaymentResponseHelper;
 use Mollie\Payment\Service\Mollie\Wrapper\GetExpressPayment;
-use stdClass;
 use Throwable;
 
 class Webhook implements HttpPostActionInterface, HttpGetActionInterface, CsrfAwareActionInterface
@@ -53,6 +57,7 @@ class Webhook implements HttpPostActionInterface, HttpGetActionInterface, CsrfAw
         readonly private ProductQuote $productQuote,
         readonly private ProductPaymentToken $productPaymentToken,
         readonly private StoreManagerInterface $storeManager,
+        readonly private MollieApiClient $mollieApiClient,
     ) {}
 
     public function createCsrfValidationException(RequestInterface $request): ?InvalidRequestException
@@ -77,7 +82,7 @@ class Webhook implements HttpPostActionInterface, HttpGetActionInterface, CsrfAw
         try {
             $payment = $this->getExpressPayment->execute($this->getStoreId($quoteId), $paymentId);
 
-            if (in_array($payment->status, ['expired', 'failed'])) {
+            if (in_array($payment->status, [PaymentResponseStatus::Expired, PaymentResponseStatus::Failed], true)) {
                 $this->response->setContents('ok');
                 $this->response->setHttpResponseCode(200);
 
@@ -136,7 +141,7 @@ class Webhook implements HttpPostActionInterface, HttpGetActionInterface, CsrfAw
     /**
      * A product page session has no saved quote, so it is built again from the payment metadata.
      */
-    private function getBaseCart(Payment $payment, string $quoteId): CartInterface
+    private function getBaseCart(PaymentResponse $payment, string $quoteId): CartInterface
     {
         if ($quoteId === '') {
             $metadata = ProductPaymentMetadata::fromMollie($payment->metadata);
@@ -149,7 +154,7 @@ class Webhook implements HttpPostActionInterface, HttpGetActionInterface, CsrfAw
         return $this->cartRepository->get((int)$quoteId);
     }
 
-    private function linkProductPaymentToken(Payment $payment, OrderInterface $order): void
+    private function linkProductPaymentToken(PaymentResponse $payment, OrderInterface $order): void
     {
         if (!ProductPaymentMetadata::isProductPayment($payment->metadata)) {
             return;
@@ -158,7 +163,7 @@ class Webhook implements HttpPostActionInterface, HttpGetActionInterface, CsrfAw
         $this->productPaymentToken->link($order, ProductPaymentMetadata::fromMollie($payment->metadata)->paymentToken);
     }
 
-    public function placeOrRetrieveOrder(CartInterface $cart, Payment $payment): OrderInterface
+    public function placeOrRetrieveOrder(CartInterface $cart, PaymentResponse $payment): OrderInterface
     {
         $order = $this->getOrderByTransactionId->execute($payment->id);
         if ($order !== null) {
@@ -169,16 +174,23 @@ class Webhook implements HttpPostActionInterface, HttpGetActionInterface, CsrfAw
         return $this->convertComponentPaymentToOrder->execute($cart, $payment);
     }
 
-    public function updateMetadata(Payment $payment, OrderInterface $order): void
+    public function updateMetadata(PaymentResponse $payment, OrderInterface $order): void
     {
-        $metadata = $payment->metadata instanceof stdClass ? $payment->metadata : new stdClass();
-        if (property_exists($metadata, 'order_id')) {
+        $metadata = PaymentResponseHelper::getMetadataArray($payment);
+        if (array_key_exists('order_id', $metadata)) {
             return;
         }
 
-        $metadata->order_id = $order->getEntityId();
+        $metadata['order_id'] = $order->getEntityId();
         $payment->metadata = $metadata;
-        $payment->update();
+
+        $this->mollieApiClient->loadByStore(storeId($order->getStoreId()))
+            ->payments->update(
+                new UpdatePaymentRequest(
+                    paymentId: $payment->id,
+                    body: new UpdatePaymentRequestBody(metadata: $metadata),
+                ),
+            );
     }
 
     public function validateForCsrf(RequestInterface $request): ?bool
@@ -190,9 +202,10 @@ class Webhook implements HttpPostActionInterface, HttpGetActionInterface, CsrfAw
      * The parameter is a string on purpose: the code generator of Magento 2.4.5 cannot build an interceptor
      * for a public method with a mixed parameter.
      */
-    public function validateThatWeHaveTheCorrectQuote(Payment $payment, string $quoteId): void
+    public function validateThatWeHaveTheCorrectQuote(PaymentResponse $payment, string $quoteId): void
     {
-        $metadataQuoteId = $payment->metadata instanceof stdClass ? ($payment->metadata->quoteId ?? null) : null;
+        $metadata = PaymentResponseHelper::getMetadataArray($payment);
+        $metadataQuoteId = isset($metadata['quoteId']) ? (string) $metadata['quoteId'] : null;
         if ($metadataQuoteId === $quoteId) {
             return;
         }

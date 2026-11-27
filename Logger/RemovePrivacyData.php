@@ -8,6 +8,9 @@ declare(strict_types=1);
 
 namespace Mollie\Payment\Logger;
 
+use ReflectionObject;
+use UnitEnum;
+
 class RemovePrivacyData
 {
     public function __construct(
@@ -46,15 +49,32 @@ class RemovePrivacyData
 
     private function removeFromObject(object $data): object
     {
+        if ($data instanceof UnitEnum) {
+            return $data;
+        }
+
+        $reflection = new ReflectionObject($data);
+        if (!$reflection->isCloneable()) {
+            return $data;
+        }
+
         $data = clone $data;
 
         foreach ($this->fieldsToRedact as $field) {
-            if (property_exists($data, $field) && is_string($data->$field)) {
+            if (
+                property_exists($data, $field)
+                && is_string($data->$field)
+                && !$this->isReadonlyProperty($reflection, $field)
+            ) {
                 $data->$field = '********';
             }
         }
 
         foreach (get_object_vars($data) as $key => $value) {
+            if ($this->isReadonlyProperty($reflection, (string) $key)) {
+                continue;
+            }
+
             if (is_array($value)) {
                 $data->$key = $this->removeFromArray($value);
             }
@@ -65,5 +85,10 @@ class RemovePrivacyData
         }
 
         return $data;
+    }
+
+    private function isReadonlyProperty(ReflectionObject $reflection, string $property): bool
+    {
+        return $reflection->hasProperty($property) && $reflection->getProperty($property)->isReadOnly();
     }
 }

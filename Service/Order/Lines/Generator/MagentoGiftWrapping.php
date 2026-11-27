@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Mollie\Payment\Service\Order\Lines\Generator;
 
 use Magento\Sales\Api\Data\OrderInterface;
-use Mollie\Api\Types\OrderLineType;
+use Mollie\Api\Models\Components\PaymentLineType;
 use Mollie\Payment\Helper\General;
 
 class MagentoGiftWrapping implements GeneratorInterface
@@ -40,7 +40,7 @@ class MagentoGiftWrapping implements GeneratorInterface
         }
 
         $orderLines[] = [
-            'type' => OrderLineType::SURCHARGE,
+            'type' => PaymentLineType::Surcharge->value,
             'description' => __('Magento Gift Wrapping'),
             'quantity' => 1,
             'unitPrice' => $this->mollieHelper->getAmountArray($currency, (float)$amount),

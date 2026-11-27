@@ -10,18 +10,21 @@ namespace Mollie\Payment\Service\Order\TransactionPart;
 
 use Magento\Customer\Api\CustomerRepositoryInterface;
 use Magento\Sales\Api\Data\OrderInterface;
+use Mollie\Api\Models\Components\EntityCustomer;
 use Mollie\Payment\Config;
-use Mollie\Payment\Model\Api;
+use Mollie\Payment\Service\Mollie\IdempotencyKeyGenerator;
+use Mollie\Payment\Service\Mollie\MollieApiClient;
 use Mollie\Payment\Service\Order\OrderContainsSubscriptionProduct;
 use Mollie\Payment\Service\Order\TransactionPartInterface;
 
 class CustomerId implements TransactionPartInterface
 {
     public function __construct(
-        private Api $api,
+        private MollieApiClient $mollieApiClient,
         private CustomerRepositoryInterface $customerRepository,
         private Config $config,
-        private OrderContainsSubscriptionProduct $orderContainsSubscriptionProduct
+        private OrderContainsSubscriptionProduct $orderContainsSubscriptionProduct,
+        private IdempotencyKeyGenerator $idempotencyKeyGenerator,
     ) {}
 
     public function process(OrderInterface $order, array $transaction): array
@@ -49,11 +52,14 @@ class CustomerId implements TransactionPartInterface
 
     private function getCustomerIdFromMollie(OrderInterface $order): string
     {
-        $this->api->load(storeId($order->getStoreId()));
-        $mollieCustomer = $this->api->customers->create([
-            'name' => $order->getCustomerName(),
-            'email' => $order->getCustomerEmail(),
-        ]);
+        $api = $this->mollieApiClient->loadByStore(storeId($order->getStoreId()));
+        $mollieCustomer = $api->customers->create(
+            body: new EntityCustomer(
+                name: $order->getCustomerName(),
+                email: $order->getCustomerEmail(),
+            ),
+            idempotencyKey: $this->idempotencyKeyGenerator->generate(),
+        )->customerResponse;
 
         $customer = $this->customerRepository->getById($order->getCustomerId());
         if ($customer->getExtensionAttributes()) {

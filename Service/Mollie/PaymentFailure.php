@@ -8,6 +8,7 @@ declare(strict_types=1);
 
 namespace Mollie\Payment\Service\Mollie;
 
+use Mollie\Api\Models\Components\PaymentDetails;
 use stdClass;
 
 class PaymentFailure
@@ -17,12 +18,18 @@ class PaymentFailure
         private readonly ?string $message = null,
     ) {}
 
-    public static function fromPaymentDetails(?stdClass $details): self
+    public static function fromPaymentDetails(PaymentDetails|stdClass|null $details): self
     {
-        $message = $details->failureMessage ?? '';
+        if ($details instanceof PaymentDetails) {
+            $reasonValue = $details->failureReason?->value ?? '';
+            $message = $details->failureMessage ?? '';
+        } else {
+            $reasonValue = is_string($details->failureReason ?? null) ? $details->failureReason : '';
+            $message = is_string($details->failureMessage ?? null) ? $details->failureMessage : '';
+        }
 
         return new self(
-            PaymentFailureReason::tryFrom($details->failureReason ?? ''),
+            PaymentFailureReason::tryFrom($reasonValue),
             $message === '' ? null : $message,
         );
     }

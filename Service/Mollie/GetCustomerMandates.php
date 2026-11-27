@@ -10,7 +10,10 @@ namespace Mollie\Payment\Service\Mollie;
 
 use Magento\Customer\Api\CustomerRepositoryInterface;
 use Magento\Framework\Exception\NoSuchEntityException;
-use Mollie\Api\Types\MandateQuery;
+use Mollie\Api\Models\Components\ListMandateResponseStatus;
+use Mollie\Api\Models\Components\MandateMethodResponse;
+use Mollie\Api\Models\Components\MandateScopes;
+use Mollie\Api\Models\Operations\ListMandatesRequest;
 
 class GetCustomerMandates
 {
@@ -35,22 +38,29 @@ class GetCustomerMandates
         $api = $this->mollieApiClient->loadByStore($storeId);
         $mandates = [];
 
-        foreach ($api->mandates->iteratorForId(
-            $mollieCustomerId,
-            scopes: [MandateQuery::SCOPE_CUSTOMER_PRESENT]
-        ) as $mandate) {
-            if ($mandate->method !== 'creditcard' || !$mandate->isValid()) {
-                continue;
-            }
+        $request = new ListMandatesRequest(
+            customerId: $mollieCustomerId,
+            scopes: [MandateScopes::CustomerPresent],
+        );
 
-            $details = $mandate->details;
-            $mandates[] = [
-                'mandate_id' => $mandate->id,
-                'card_label' => $details->cardLabel ?? '',
-                'card_number_last4' => $details->cardNumber ?? '',
-                'card_expiry_date' => $details->cardExpiryDate ?? null,
-                'card_holder' => $details->cardHolder ?? null,
-            ];
+        foreach ($api->mandates->list($request) as $page) {
+            foreach ($page->object?->embedded->mandates ?? [] as $mandate) {
+                if (
+                    $mandate->method !== MandateMethodResponse::Creditcard
+                    || $mandate->status !== ListMandateResponseStatus::Valid
+                ) {
+                    continue;
+                }
+
+                $details = $mandate->details;
+                $mandates[] = [
+                    'mandate_id' => $mandate->id,
+                    'card_label' => $details->cardLabel?->value ?? '',
+                    'card_number_last4' => $details->cardNumber ?? '',
+                    'card_expiry_date' => $details->cardExpiryDate,
+                    'card_holder' => $details->cardHolder,
+                ];
+            }
         }
 
         return $mandates;

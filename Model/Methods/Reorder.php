@@ -22,7 +22,8 @@ use Magento\Quote\Api\Data\CartInterface;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Payment;
 use Magento\Sales\Model\OrderRepository;
-use Mollie\Api\Exceptions\ApiException;
+use Mollie\Api\Models\Errors\APIException;
+use Mollie\Api\Models\Errors\ErrorResponseThrowable;
 use Mollie\Payment\Config;
 use Mollie\Payment\Helper\General as MollieHelper;
 use Mollie\Payment\Model\Client\Payments as PaymentsApi;
@@ -97,7 +98,8 @@ class Reorder extends Mollie
      * @param object $stateObject
      *
      * @throws LocalizedException
-     * @throws ApiException
+     * @throws APIException
+     * @throws ErrorResponseThrowable
      */
     public function initialize($paymentAction, $stateObject): static
     {

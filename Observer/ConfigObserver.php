@@ -12,14 +12,16 @@ use Exception;
 use Magento\Framework\Event\Observer as EventObserver;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Message\ManagerInterface;
-use Mollie\Api\Resources\Method;
-use Mollie\Api\Types\MethodQuery;
+use Mollie\Api\Client;
+use Mollie\Api\Models\Components\MethodStatus;
 use Mollie\Payment\Config;
 use Mollie\Payment\Helper\General as MollieHelper;
 use Mollie\Payment\Model\Methods\Directdebit;
 use Mollie\Payment\Model\Methods\Expresscomponents;
 use Mollie\Payment\Model\Methods\GooglePay;
 use Mollie\Payment\Model\Methods\Pointofsale;
+use Mollie\Payment\Service\Mollie\ApiExceptionHelper;
+use Mollie\Payment\Service\Mollie\ListMethods;
 use Mollie\Payment\Service\Mollie\MollieApiClient;
 
 /**
@@ -33,7 +35,8 @@ class ConfigObserver implements ObserverInterface
         private ManagerInterface $messageManager,
         private MollieHelper $mollieHelper,
         private MollieApiClient $mollieApiClient,
-        private Config $config
+        private Config $config,
+        private ListMethods $listMethods,
     ) {}
 
     /**
@@ -60,7 +63,7 @@ class ConfigObserver implements ObserverInterface
      */
     public function validatePaymentMethods(?int $storeId, string $modus): void
     {
-        if (!class_exists('Mollie\Api\CompatibilityChecker')) {
+        if (!class_exists(Client::class)) {
             $error = $this->mollieHelper->getPhpApiErrorMessage(false);
             $this->mollieHelper->disableExtension();
             $this->mollieHelper->addTolog('error', $error);
@@ -74,29 +77,35 @@ class ConfigObserver implements ObserverInterface
         }
 
         try {
-            $apiMethods = $this->mollieApiClient->loadByStore($storeId)->methods->allEnabled([
-                'includeWallets' => MethodQuery::WALLETS,
-            ]);
+            $apiMethods = $this->listMethods->execute(
+                $this->mollieApiClient->loadByStore($storeId),
+                ['includeWallets' => ListMethods::WALLETS],
+            );
         } catch (Exception $e) {
-            $this->mollieHelper->addTolog('error', $e->getMessage());
-            $this->messageManager->addErrorMessage($e->getMessage());
+            $errorMessage = ApiExceptionHelper::getMessage($e);
+            $this->mollieHelper->addTolog('error', $errorMessage);
+            $this->messageManager->addErrorMessage($errorMessage);
 
             return;
         }
 
-        if ($apiMethods->count() === 0) {
+        if ($apiMethods === []) {
             return;
         }
 
         $activeMethods = $this->mollieHelper->getAllActiveMethods($storeId);
 
         $methods = [];
-        $apiMethods = array_filter((array)$apiMethods, function (Method $method): bool {
-            return $method->status == 'activated';
-        });
+        $apiMethods = array_filter(
+            $apiMethods,
+            static fn (array $method): bool => ($method['status'] ?? null) === MethodStatus::Activated->value,
+        );
 
         foreach ($apiMethods as $apiMethod) {
-            $methods[$apiMethod->id] = $apiMethod;
+            $id = $apiMethod['id'] ?? null;
+            if (is_string($id) && $id !== '') {
+                $methods[$id] = $apiMethod;
+            }
         }
 
         $disabledMethods = [];

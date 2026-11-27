@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Mollie\Payment\Model\Client\Payments\Processors;
 
 use Magento\Sales\Api\Data\OrderInterface;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Models\Components\PaymentResponse;
 use Mollie\Payment\Helper\General;
 use Mollie\Payment\Model\Client\PaymentProcessorInterface;
 use Mollie\Payment\Model\Client\ProcessTransactionResponse;
@@ -29,11 +29,11 @@ class FailedStatusProcessor implements PaymentProcessorInterface
 
     public function process(
         OrderInterface $magentoOrder,
-        Payment $molliePayment,
+        PaymentResponse $molliePayment,
         string $type,
         ProcessTransactionResponse $response,
     ): ?ProcessTransactionResponse {
-        $status = $molliePayment->status;
+        $status = $molliePayment->status->value;
         if ($type == 'webhook') {
             $this->cancelOrder->execute($magentoOrder, $status);
             $this->transactionProcessor->process($magentoOrder, $molliePayment);

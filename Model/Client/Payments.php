@@ -8,27 +8,34 @@ declare(strict_types=1);
 
 namespace Mollie\Payment\Model\Client;
 
+use GuzzleHttp\Exception\GuzzleException;
 use Magento\Framework\Event\ManagerInterface as EventManager;
 use Magento\Sales\Api\Data\OrderAddressInterface;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Address;
 use Magento\Sales\Model\OrderRepository;
-use Mollie\Api\Exceptions\ApiException;
-use Mollie\Api\Exceptions\MollieException;
-use Mollie\Api\MollieApiClient;
-use Mollie\Api\Resources\Payment as MolliePayment;
-use Mollie\Api\Types\PaymentStatus;
+use Mollie\Api\Client;
+use Mollie\Api\Models\Components\PaymentResponse as MolliePayment;
+use Mollie\Api\Models\Components\PaymentResponseStatus;
+use Mollie\Api\Models\Errors\APIException;
+use Mollie\Api\Models\Errors\ErrorResponseThrowable;
+use Mollie\Api\Models\Operations\CreatePaymentRequest;
+use Mollie\Api\Models\Operations\GetPaymentRequest;
 use Mollie\Payment\Exceptions\PaymentAborted;
 use Mollie\Payment\Helper\General as MollieHelper;
 use Mollie\Payment\Model\Client\Payments\ProcessTransaction;
+use Mollie\Payment\Service\Mollie\ApiExceptionHelper;
 use Mollie\Payment\Service\Mollie\BuildPaymentRequest;
+use Mollie\Payment\Service\Mollie\IdempotencyKeyGenerator;
 use Mollie\Payment\Service\Mollie\Order\LinkTransactionToOrder;
+use Mollie\Payment\Service\Mollie\PaymentResponseHelper;
 use Mollie\Payment\Service\Mollie\TransactionDescription;
 use Mollie\Payment\Service\Order\BuildTransaction;
 use Mollie\Payment\Service\Order\MethodCode;
 use Mollie\Payment\Service\Order\Transaction;
 use Mollie\Payment\Service\PaymentToken\PaymentTokenForOrder;
+use Throwable;
 
 class Payments
 {
@@ -47,16 +54,16 @@ class Payments
         private LinkTransactionToOrder $linkTransactionToOrder,
         private ProcessTransaction $processTransaction,
         private MethodCode $methodCode,
-        private BuildPaymentRequest $buildPaymentRequest
+        private BuildPaymentRequest $buildPaymentRequest,
+        private IdempotencyKeyGenerator $idempotencyKeyGenerator,
     ) {}
 
     /**
-     * @throws ApiException
+     * @throws APIException
+     * @throws ErrorResponseThrowable
      * @throws PaymentAborted
-     *
-     * @return string
      */
-    public function startTransaction(OrderInterface $order, MollieApiClient $mollieApi): ?string
+    public function startTransaction(OrderInterface $order, Client $mollieApi): ?string
     {
         $storeId = storeId($order->getStoreId());
         $orderId = $order->getEntityId();
@@ -109,18 +116,25 @@ class Payments
         $this->processResponse($order, $payment);
 
         // Order is paid immediately (eg. Credit Card with Components, Apple Pay), process transaction
-        if ($payment->isAuthorized() || $payment->isPaid()) {
+        if (PaymentResponseHelper::isAuthorized($payment) || PaymentResponseHelper::isPaid($payment)) {
             $this->processTransaction->execute($order, static::TRANSACTION_TYPE_WEBHOOK);
         }
 
-        return $payment->getCheckoutUrl();
+        return PaymentResponseHelper::getCheckoutUrl($payment);
     }
 
-    private function createPayment(OrderInterface $order, MollieApiClient $mollieApi, array $paymentData): MolliePayment
+    private function createPayment(OrderInterface $order, Client $mollieApi, array $paymentData): MolliePayment
     {
         try {
-            return $mollieApi->send($this->buildPaymentRequest->execute($paymentData));
-        } catch (MollieException $exception) {
+            $response = $mollieApi->payments->create(
+                new CreatePaymentRequest(
+                    idempotencyKey: $this->idempotencyKeyGenerator->generate(),
+                    body: $this->buildPaymentRequest->execute($paymentData),
+                ),
+            );
+
+            return $response->paymentResponse;
+        } catch (APIException|ErrorResponseThrowable|GuzzleException $exception) {
             $this->logFailedPaymentCreation($order, $paymentData, $exception);
 
             throw $exception;
@@ -130,14 +144,14 @@ class Payments
     private function logFailedPaymentCreation(
         OrderInterface $order,
         array $paymentData,
-        MollieException $exception,
+        Throwable $exception,
     ): void {
         $this->mollieHelper->addTolog('error', [
             'message' => 'Payment creation failed',
             'order' => $order->getIncrementId(),
             'store_id' => $order->getStoreId(),
             'amount' => $paymentData['amount'],
-            'exception' => $exception->getMessage(),
+            'exception' => ApiExceptionHelper::getMessage($exception),
         ]);
     }
 
@@ -181,17 +195,17 @@ class Payments
             $this->mollieHelper->uncancelOrder($order);
         }
 
-        $order->getPayment()->setAdditionalInformation('checkout_url', $payment->getCheckoutUrl());
+        $order->getPayment()->setAdditionalInformation('checkout_url', PaymentResponseHelper::getCheckoutUrl($payment));
         $order->getPayment()->setAdditionalInformation('checkout_type', self::CHECKOUT_TYPE);
-        $order->getPayment()->setAdditionalInformation('payment_status', $payment->status);
-        if (isset($payment->expiresAt)) {
+        $order->getPayment()->setAdditionalInformation('payment_status', $payment->status->value);
+        if ($payment->expiresAt !== null) {
             $order->getPayment()->setAdditionalInformation('expires_at', $payment->expiresAt);
         }
 
-        if (isset($payment->_links->changePaymentState->href)) {
+        if ($payment->links->changePaymentState?->href !== null) {
             $order->getPayment()->setAdditionalInformation(
                 'mollie_change_payment_state_url',
-                $payment->_links->changePaymentState->href,
+                $payment->links->changePaymentState->href,
             );
         }
 
@@ -207,41 +221,44 @@ class Payments
         $this->orderRepository->save($order);
     }
 
-    public function orderHasUpdate(OrderInterface $order, MollieApiClient $mollieApi): bool
+    public function orderHasUpdate(OrderInterface $order, Client $mollieApi): bool
     {
         if (in_array($order->getState(), [Order::STATE_COMPLETE, Order::STATE_CLOSED])) {
             return false;
         }
 
         $transactionId = $order->getMollieTransactionId();
-        $paymentData = $mollieApi->payments->get($transactionId);
+        if ($transactionId === null || $transactionId === '') {
+            return false;
+        }
 
-        $mapping = [
-            PaymentStatus::OPEN => Order::STATE_NEW,
-            PaymentStatus::PENDING => Order::STATE_PENDING_PAYMENT,
-            PaymentStatus::AUTHORIZED => Order::STATE_PROCESSING,
-            PaymentStatus::CANCELED => Order::STATE_CANCELED,
-            PaymentStatus::EXPIRED => Order::STATE_CLOSED,
-            PaymentStatus::PAID => Order::STATE_PROCESSING,
-            PaymentStatus::FAILED => Order::STATE_CANCELED,
-        ];
+        $paymentData = $mollieApi->payments->get(new GetPaymentRequest(paymentId: $transactionId))->paymentResponse;
+        if ($paymentData === null) {
+            return false;
+        }
 
-        $expectedStatus = $mapping[$paymentData->status];
+        $expectedStatus = match ($paymentData->status) {
+            PaymentResponseStatus::Open => Order::STATE_NEW,
+            PaymentResponseStatus::Pending => Order::STATE_PENDING_PAYMENT,
+            PaymentResponseStatus::Authorized, PaymentResponseStatus::Paid => Order::STATE_PROCESSING,
+            PaymentResponseStatus::Canceled, PaymentResponseStatus::Failed => Order::STATE_CANCELED,
+            PaymentResponseStatus::Expired => Order::STATE_CLOSED,
+        };
 
         return $expectedStatus != $order->getState();
     }
 
-    private function getCheckoutUrl(MollieApiClient $mollieApi, ?string $transactionId): ?string
+    private function getCheckoutUrl(Client $mollieApi, ?string $transactionId): ?string
     {
         if ($transactionId === null) {
             return null;
         }
 
-        $payment = $mollieApi->payments->get($transactionId);
-        if ($payment->status == 'paid') {
+        $payment = $mollieApi->payments->get(new GetPaymentRequest(paymentId: $transactionId))->paymentResponse;
+        if ($payment->status === PaymentResponseStatus::Paid) {
             throw new PaymentAborted(__('This order already has been paid.'));
         }
 
-        return $payment->getCheckoutUrl();
+        return PaymentResponseHelper::getCheckoutUrl($payment);
     }
 }

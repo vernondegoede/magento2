@@ -15,11 +15,10 @@ use Magento\Quote\Api\Data\AddressInterface;
 use Magento\Quote\Api\Data\CartInterface;
 use Magento\Quote\Api\Data\CartItemInterface;
 use Magento\Quote\Api\Data\TotalsInterface;
-use Mollie\Api\Http\Data\Money;
-use Mollie\Api\Resources\Session;
+use Mollie\Api\Models\Components\SessionResponse;
+use Mollie\Api\Utils\JSON;
 use Mollie\Payment\Exceptions\CustomerDetailsRequired;
 use Mollie\Payment\Helper\General;
-use Mollie\Payment\Service\Mollie\Api\CreateSessionRequest;
 use Mollie\Payment\Service\Mollie\Express\ExpressComponentsBeta;
 use Mollie\Payment\Service\Mollie\Express\ExpressSession;
 use Mollie\Payment\Service\Mollie\Express\ProductBuyRequest;
@@ -29,6 +28,7 @@ use Mollie\Payment\Service\Mollie\Session\LineVat;
 use Mollie\Payment\Service\Order\Transaction;
 use Mollie\Payment\Service\PaymentToken\Generate;
 use Mollie\Payment\Service\PaymentToken\PaymentTokenForQuote;
+use Speakeasy\Serializer\DeserializationContext;
 
 class CreateSession
 {
@@ -60,6 +60,8 @@ class CreateSession
         private readonly ExpressComponentsBeta $beta,
         private readonly SessionAddresses $sessionAddresses,
         private readonly LineVat $lineVat,
+        private readonly RawApiRequest $rawApiRequest,
+        private readonly IdempotencyKeyGenerator $idempotencyKeyGenerator,
     ) {
     }
 
@@ -74,7 +76,7 @@ class CreateSession
             ['quoteId' => $cart->getEntityId(), 'store_id' => storeId($cart->getStoreId())],
         );
 
-        return $session->clientAccessToken; // @phpstan-ignore property.notFound
+        return $session->clientAccessToken;
     }
 
     /**
@@ -102,8 +104,8 @@ class CreateSession
         );
 
         return new ExpressSession(
-            (string)$session->id,
-            (string)$session->clientAccessToken, // @phpstan-ignore property.notFound
+            $session->id,
+            $session->clientAccessToken,
             $paymentToken,
         );
     }
@@ -136,7 +138,7 @@ class CreateSession
     /**
      * @param array<string, mixed> $metadata
      */
-    private function send(string $paymentToken, string $webhookUrl, array $metadata): Session
+    private function send(string $paymentToken, string $webhookUrl, array $metadata): SessionResponse
     {
         $requiredCustomerDetails = $this->getRequiredCustomerDetails();
         $this->guardCustomerDetailsAreSupported($requiredCustomerDetails);
@@ -144,20 +146,56 @@ class CreateSession
         $lines = $this->getLines($this->isExpressCheckout);
         $storeName = $this->scopeConfig->getValue('general/store_information/name');
 
-        /** @var Session $session */
-        $session = $this->mollieApiClient->loadByStore($this->cart->getStoreId())->send(new CreateSessionRequest(
-            $this->transaction->getExpressRedirectUrl($this->cart, $paymentToken),
-            $this->urlBuilder->getUrl('checkout/cart'),
-            new Money($this->cart->getQuoteCurrencyCode(), number_format($this->getTotal($lines), 2, '.', '')),
-            is_string($storeName) ? $storeName : __('Unnamed webshop')->render(),
-            $lines,
-            ['webhookUrl' => $webhookUrl],
-            $metadata,
-            $requiredCustomerDetails,
-            $this->getShipping(),
-            $this->billingAddressToSend,
-            $this->shippingAddressToSend,
-        ));
+        $payload = [
+            'amount' => [
+                'currency' => (string) $this->cart->getQuoteCurrencyCode(),
+                'value' => number_format($this->getTotal($lines), 2, '.', ''),
+            ],
+            'description' => is_string($storeName) ? $storeName : __('Unnamed webshop')->render(),
+            'redirectUrl' => $this->transaction->getExpressRedirectUrl($this->cart, $paymentToken),
+            'cancelUrl' => $this->urlBuilder->getUrl('checkout/cart'),
+            'lines' => $lines,
+            'payment' => ['webhookUrl' => $webhookUrl],
+        ];
+
+        if ($metadata !== []) {
+            $payload['metadata'] = $metadata;
+        }
+
+        if ($requiredCustomerDetails !== []) {
+            $payload['requiredCustomerDetails'] = $requiredCustomerDetails;
+        }
+
+        $shipping = $this->getShipping();
+        if ($shipping !== []) {
+            $payload['shipping'] = $shipping;
+        }
+
+        if ($this->billingAddressToSend !== []) {
+            $payload['billingAddress'] = $this->billingAddressToSend;
+        }
+
+        if ($this->shippingAddressToSend !== []) {
+            $payload['shippingAddress'] = $this->shippingAddressToSend;
+        }
+
+        $client = $this->mollieApiClient->loadByStore((int) $this->cart->getStoreId());
+        $response = $this->rawApiRequest->send(
+            $client,
+            'POST',
+            '/v2/sessions',
+            [],
+            $payload,
+            $this->idempotencyKeyGenerator->generate(),
+        );
+
+        /** @var SessionResponse $session */
+        $session = JSON::createSerializer()->deserialize(
+            (string) $response->getBody(),
+            SessionResponse::class,
+            'json',
+            DeserializationContext::create()->setRequireAllRequiredProperties(true),
+        );
 
         $this->cart->getPayment()->setAdditionalInformation('mollie_session_id', $session->id);
 

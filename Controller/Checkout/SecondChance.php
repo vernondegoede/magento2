@@ -19,7 +19,8 @@ use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
-use Mollie\Api\Exceptions\ApiException;
+use Mollie\Api\Models\Errors\APIException;
+use Mollie\Api\Models\Errors\ErrorResponseThrowable;
 use Mollie\Payment\Api\Data\PaymentTokenInterface;
 use Mollie\Payment\Api\PaymentTokenRepositoryInterface;
 use Mollie\Payment\Service\Order\Reorder;
@@ -54,7 +55,8 @@ class SecondChance extends Action implements HttpGetActionInterface
      * @return ResponseInterface
      * @throws NoSuchEntityException
      * @throws LocalizedException
-     * @throws ApiException
+     * @throws APIException
+     * @throws ErrorResponseThrowable
      */
     private function reorder(): ResponseInterface
     {

@@ -13,7 +13,8 @@ use Magento\Sales\Api\Data\InvoiceInterface;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Controller\Adminhtml\Order\CreditmemoLoader;
 use Magento\Sales\Model\Service\CreditmemoService;
-use Mollie\Api\Resources\Refund;
+use Mollie\Api\Models\Components\ListRefundResponse;
+use Mollie\Api\Models\Components\RefundResponse;
 
 class CreateCreditmemoFromRefund
 {
@@ -23,8 +24,11 @@ class CreateCreditmemoFromRefund
         private readonly Registry $registry
     ) {}
 
-    public function execute(OrderInterface $order, InvoiceInterface $invoice, Refund $refund): void
-    {
+    public function execute(
+        OrderInterface $order,
+        InvoiceInterface $invoice,
+        ListRefundResponse|RefundResponse $refund
+    ): void {
         $qtys = [];
         foreach ($order->getAllItems() as $item) {
             $qtys[$item->getId()]['qty'] = 0;

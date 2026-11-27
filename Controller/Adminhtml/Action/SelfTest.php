@@ -42,7 +42,7 @@ class SelfTest extends Action implements HttpPostActionInterface
     public function execute(): Json
     {
         $result = $this->resultJsonFactory->create();
-        if (!class_exists('Mollie\Api\CompatibilityChecker')) {
+        if (!class_exists(\Mollie\Api\Client::class)) {
             return $this->getPhpApiErrorMessage($result);
         }
 
