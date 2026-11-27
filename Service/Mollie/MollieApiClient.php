@@ -13,7 +13,7 @@ use Magento\Framework\Module\Manager;
 use Mollie\Api\Client;
 use Mollie\Api\Models\Components\Security;
 use Mollie\Payment\Config;
-use Mollie\Payment\Service\Mollie\Wrapper\FallbackApiKeyClient;
+use Mollie\Payment\Service\Mollie\Wrapper\FallbackApiKeyMiddleware;
 use Mollie\Payment\Service\Mollie\Wrapper\FetchFallbackApiKeys;
 
 class MollieApiClient
@@ -46,9 +46,8 @@ class MollieApiClient
             return $this->instances[$apiKey];
         }
 
-        $httpClient = new FallbackApiKeyClient(
-            $this->createHttpAdapter->execute(),
-            $this->fetchFallbackApiKeys,
+        $httpClient = $this->createHttpAdapter->execute(
+            new FallbackApiKeyMiddleware($this->fetchFallbackApiKeys),
         );
 
         $mollieApiClient = Client::builder()

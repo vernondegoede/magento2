@@ -10,7 +10,6 @@ namespace Mollie\Payment\Service\Mollie;
 
 use Composer\CaBundle\CaBundle;
 use GuzzleHttp\Client;
-use GuzzleHttp\ClientInterface;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\RequestOptions;
 
@@ -21,14 +20,19 @@ class CreateHttpAdapter
         private int $connectTimeout = 2
     ) {}
 
-    public function execute(): ClientInterface
+    public function execute(?callable $middleware = null): Client
     {
+        $handlerStack = HandlerStack::create();
+        if ($middleware !== null) {
+            $handlerStack->push($middleware, 'mollie-fallback-api-key');
+        }
+
         return new Client([
             RequestOptions::VERIFY => CaBundle::getBundledCaBundlePath(),
             RequestOptions::TIMEOUT => $this->timeout,
             RequestOptions::CONNECT_TIMEOUT => $this->connectTimeout,
             RequestOptions::HTTP_ERRORS => false,
-            'handler' => HandlerStack::create(),
+            'handler' => $handlerStack,
         ]);
     }
 }
