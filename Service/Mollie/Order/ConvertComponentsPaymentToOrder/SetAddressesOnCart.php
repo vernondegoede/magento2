@@ -56,7 +56,7 @@ class SetAddressesOnCart
             );
         }
 
-        $email = $payment->billingAddress?->email ?? $payment->shippingAddress?->email;
+        $email = $payment->billingAddress->email ?? $payment->shippingAddress?->email;
         if (is_string($email) && $email !== '') {
             $cart->setCustomerEmail($email);
         }

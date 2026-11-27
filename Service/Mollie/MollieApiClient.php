@@ -51,17 +51,11 @@ class MollieApiClient
             $this->fetchFallbackApiKeys,
         );
 
-        $customUserAgent = $this->buildCustomUserAgent();
-
         $mollieApiClient = Client::builder()
             ->setClient($httpClient)
             ->setSecurity(new Security(apiKey: $apiKey))
-            ->setCustomUserAgent($customUserAgent)
+            ->setCustomUserAgent($this->buildCustomUserAgent())
             ->build();
-
-        if (!str_contains($mollieApiClient->sdkConfiguration->userAgent, $customUserAgent)) {
-            $mollieApiClient->sdkConfiguration->userAgent .= ' ' . $customUserAgent;
-        }
 
         $this->instances[$apiKey] = $mollieApiClient;
 

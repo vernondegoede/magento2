@@ -42,11 +42,17 @@ class RawApiRequest
         $baseUrl = rtrim($sdkConfig->getTemplatedServerUrl(), '/');
         $url = $baseUrl . '/' . ltrim($path, '/');
 
+        $userAgent = $sdkConfig->userAgent;
+        $customUserAgent = $sdkConfig->globals['parameters']['header']['customUserAgent'] ?? null;
+        if (is_string($customUserAgent) && $customUserAgent !== '' && !str_contains($userAgent, $customUserAgent)) {
+            $userAgent = trim($userAgent . ' ' . $customUserAgent);
+        }
+
         $httpOptions = [
             'http_errors' => false,
             'headers' => [
                 'Accept' => 'application/hal+json',
-                'user-agent' => $sdkConfig->userAgent,
+                'user-agent' => $userAgent,
             ],
         ];
 

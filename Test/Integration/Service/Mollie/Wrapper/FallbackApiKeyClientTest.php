@@ -8,6 +8,9 @@ declare(strict_types=1);
 
 namespace Mollie\Payment\Test\Integration\Service\Mollie\Wrapper;
 
+use GuzzleHttp\ClientInterface;
+use GuzzleHttp\Promise\Create;
+use GuzzleHttp\Promise\PromiseInterface;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use Mollie\Payment\Service\Mollie\Wrapper\FallbackApiKeyClient;
@@ -86,22 +89,46 @@ class FallbackApiKeyClientTest extends TestCase
 
     public function testRewindsRequestBodyAndReturnsPrimaryResponseWhenAllFallbacksFail(): void
     {
-        $seenBodies = [];
-        $fakeClient = new FakeHttpClient([
-            'POST /v2/payments/tr_old/refunds' => function (RequestInterface $request, array $body, array $options) use (&$seenBodies): ResponseInterface {
-                $seenBodies[] = $request->getBody()->getContents();
+        $recordingClient = new class() implements ClientInterface {
+            /** @var string[] */
+            public array $seenBodies = [];
+
+            public function send(RequestInterface $request, array $options = []): ResponseInterface
+            {
+                // Intentionally consumes the stream without rewinding, matching real HTTP transports.
+                $this->seenBodies[] = $request->getBody()->getContents();
                 $auth = $options['headers']['Authorization'] ?? '';
 
                 return $auth === 'Bearer live_primary_key'
                     ? new Response(404, [], '{"detail":"Primary not found"}')
                     : new Response(401, [], '{"detail":"Revoked old key"}');
-            },
-        ]);
+            }
+
+            public function sendAsync(RequestInterface $request, array $options = []): PromiseInterface
+            {
+                return Create::promiseFor($this->send($request, $options));
+            }
+
+            public function request(string $method, $uri, array $options = []): ResponseInterface
+            {
+                return $this->send(new Request($method, $uri), $options);
+            }
+
+            public function requestAsync(string $method, $uri, array $options = []): PromiseInterface
+            {
+                return Create::promiseFor($this->request($method, $uri, $options));
+            }
+
+            public function getConfig(?string $option = null): mixed
+            {
+                return null;
+            }
+        };
 
         $fallbackKeys = $this->createMock(FetchFallbackApiKeys::class);
         $fallbackKeys->method('retrieve')->willReturn(['live_revoked_key']);
 
-        $client = new FallbackApiKeyClient($fakeClient, $fallbackKeys);
+        $client = new FallbackApiKeyClient($recordingClient, $fallbackKeys);
         $response = $client->send(
             new Request('POST', 'https://api.mollie.com/v2/payments/tr_old/refunds', [], '{"amount":{"currency":"EUR","value":"10.00"}}'),
             ['headers' => ['Authorization' => 'Bearer live_primary_key']],
@@ -114,7 +141,7 @@ class FallbackApiKeyClientTest extends TestCase
                 '{"amount":{"currency":"EUR","value":"10.00"}}',
                 '{"amount":{"currency":"EUR","value":"10.00"}}',
             ],
-            $seenBodies,
+            $recordingClient->seenBodies,
         );
     }
 }

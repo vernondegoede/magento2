@@ -55,7 +55,7 @@ class GetCustomerMandates
                 $details = $mandate->details;
                 $mandates[] = [
                     'mandate_id' => $mandate->id,
-                    'card_label' => $details->cardLabel?->value ?? '',
+                    'card_label' => $details->cardLabel->value ?? '',
                     'card_number_last4' => $details->cardNumber ?? '',
                     'card_expiry_date' => $details->cardExpiryDate,
                     'card_holder' => $details->cardHolder,

@@ -41,8 +41,8 @@ class MollieTerminalConfigProvider implements ConfigProviderInterface
 
                 $output[] = [
                     'id' => $terminal->id,
-                    'brand' => $terminal->brand?->value ?? '',
-                    'model' => $terminal->model?->value ?? '',
+                    'brand' => $terminal->brand->value ?? '',
+                    'model' => $terminal->model->value ?? '',
                     'serialNumber' => $terminal->serialNumber,
                     'description' => $terminal->description,
                 ];

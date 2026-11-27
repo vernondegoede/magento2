@@ -43,8 +43,8 @@ class GetCustomerFromPayment
         $customer
             ->setWebsiteId($store->getWebsiteId())
             ->setStoreId($store->getId())
-            ->setFirstname($billingAddress?->givenName ?? $shippingAddress->getFirstname())
-            ->setLastname($billingAddress?->familyName ?? $shippingAddress->getLastname())
+            ->setFirstname($billingAddress->givenName ?? $shippingAddress->getFirstname())
+            ->setLastname($billingAddress->familyName ?? $shippingAddress->getLastname())
             ->setEmail($email);
 
         return $this->customerRepository->save($customer);

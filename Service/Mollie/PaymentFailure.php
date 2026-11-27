@@ -21,7 +21,7 @@ class PaymentFailure
     public static function fromPaymentDetails(PaymentDetails|stdClass|null $details): self
     {
         if ($details instanceof PaymentDetails) {
-            $reasonValue = $details->failureReason?->value ?? '';
+            $reasonValue = $details->failureReason->value ?? '';
             $message = $details->failureMessage ?? '';
         } else {
             $reasonValue = is_string($details->failureReason ?? null) ? $details->failureReason : '';
