@@ -11,7 +11,6 @@ namespace Mollie\Payment\Service\Mollie;
 use Exception;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Payment\Model\MethodInterface;
-use Mollie\Api\Exceptions\ValidationException;
 
 class FormatExceptionMessages
 {
@@ -63,19 +62,21 @@ class FormatExceptionMessages
         // __('Please check your shipping address and try again.')
         // __('Please check your card details and try again.')
 
+        $exceptionMessage = ApiExceptionHelper::getMessage($exception);
+
         foreach ($this->allowedErrorMessages as $message) {
-            if (stripos($exception->getMessage(), $message) !== false) {
+            if (stripos($exceptionMessage, $message) !== false) {
                 return __($message)->render();
             }
         }
 
         foreach ($this->convertErrorMessages as $search => $replacement) {
-            if (stripos($exception->getMessage(), $search) !== false) {
+            if (stripos($exceptionMessage, $search) !== false) {
                 return __($replacement)->render();
             }
         }
 
-        if ($methodInstance && stripos($exception->getMessage(), 'cURL error 28') !== false) {
+        if ($methodInstance && stripos($exceptionMessage, 'cURL error 28') !== false) {
             return __(
                 'A Timeout while connecting to %1 occurred, this could be the result of an outage. ' .
                 'Please try again or select another payment method.',
@@ -83,8 +84,8 @@ class FormatExceptionMessages
             )->render();
         }
 
-        if ($exception instanceof ValidationException) {
-            return $this->formatValidationException($exception);
+        if (ApiExceptionHelper::isValidationError($exception)) {
+            return $this->formatValidationException(ApiExceptionHelper::getField($exception));
         }
 
         if ($exception instanceof LocalizedException) {
@@ -98,9 +99,9 @@ class FormatExceptionMessages
      * The message of a Mollie exception contains the full request body, which includes customer data like addresses,
      * and the detail is only available in English. So we only use the field to pick a message of our own.
      */
-    private function formatValidationException(ValidationException $exception): string
+    private function formatValidationException(?string $field): string
     {
-        $field = $exception->getField() ?? '';
+        $field ??= '';
         foreach (self::FIELD_ERROR_MESSAGES as $pattern => $message) {
             if (preg_match($pattern, $field) === 1) {
                 return __($message)->render();

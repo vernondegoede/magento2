@@ -8,45 +8,22 @@ declare(strict_types=1);
 
 namespace Mollie\Payment\Model;
 
-use Magento\Framework\Module\Manager;
-use Mollie\Api\Exceptions\ApiException;
-use Mollie\Api\MollieApiClient;
-use Mollie\Payment\Config;
+use Mollie\Api\Client;
 use Mollie\Payment\Helper\General as MollieHelper;
+use Mollie\Payment\Service\Mollie\MollieApiClient;
 
-class Api extends MollieApiClient
+/**
+ * @deprecated Use \Mollie\Payment\Service\Mollie\MollieApiClient instead.
+ */
+class Api
 {
-    /**
-     * @var MollieHelper
-     */
-    public $mollieHelper;
-
     public function __construct(
-        private Config $config,
-        MollieHelper $mollieHelper,
-        private Manager $moduleManager,
-    ) {
-        $this->mollieHelper = $mollieHelper;
-        parent::__construct();
-    }
+        public MollieHelper $mollieHelper,
+        private MollieApiClient $mollieApiClient,
+    ) {}
 
-    /**
-     * @param null $storeId
-     * @throws ApiException
-     */
-    public function load($storeId = null): void
+    public function load(?int $storeId = null): Client
     {
-        $this->setApiKey($this->mollieHelper->getApiKey($storeId));
-        $this->addVersionString('Magento/' . $this->config->getMagentoVersion());
-        $this->addVersionString('MagentoEdition/' . $this->config->getMagentoEdition());
-        $this->addVersionString('MollieMagento2/' . $this->config->getVersion());
-
-        if ($this->moduleManager->isEnabled('Hyva_Theme')) {
-            $this->addVersionString('HyvaTheme');
-        }
-
-        if ($this->moduleManager->isEnabled('Hyva_Checkout')) {
-            $this->addVersionString('HyvaCheckout');
-        }
+        return $this->mollieApiClient->loadByStore($storeId);
     }
 }

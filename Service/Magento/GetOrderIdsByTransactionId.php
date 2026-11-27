@@ -13,8 +13,9 @@ use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\ResourceModel\Order as OrderResource;
-use Mollie\Api\Resources\Payment;
-use Mollie\Api\Types\PaymentStatus;
+use Mollie\Api\Models\Components\PaymentResponse;
+use Mollie\Api\Models\Components\PaymentResponseStatus;
+use Mollie\Api\Models\Operations\GetPaymentRequest;
 use Mollie\Payment\Api\Data\TransactionToOrderInterface;
 use Mollie\Payment\Api\PaymentTokenRepositoryInterface;
 use Mollie\Payment\Api\TransactionToOrderRepositoryInterface;
@@ -23,12 +24,13 @@ use Mollie\Payment\Model\ResourceModel\TransactionToOrder as TransactionToOrderR
 use Mollie\Payment\Service\Mollie\MollieApiClient;
 use Mollie\Payment\Service\Mollie\Order\LegacyOrderTransactionId;
 use Mollie\Payment\Service\Mollie\Order\LinkTransactionToOrder;
+use Mollie\Payment\Service\Mollie\PaymentResponseHelper;
 use Mollie\Payment\Service\Order\ExpiredOrderToTransaction;
 use Mollie\Payment\Service\Order\OrderCommentHistory;
 
 class GetOrderIdsByTransactionId
 {
-    private const SKIPPABLE_STATUSES = [PaymentStatus::CANCELED, PaymentStatus::FAILED];
+    private const SKIPPABLE_STATUSES = [PaymentResponseStatus::Canceled, PaymentResponseStatus::Failed];
 
     public function __construct(
         private readonly Config $config,
@@ -77,9 +79,12 @@ class GetOrderIdsByTransactionId
 
     private function tryToMatchByMetadata(string $transactionId): array
     {
-        $payment = $this->mollieApiClient->loadByStore()->payments->get($transactionId);
+        $payment = $this->mollieApiClient->loadByStore()
+            ->payments->get(new GetPaymentRequest(paymentId: $transactionId))
+            ->paymentResponse;
 
-        $orderId = $payment->metadata->order_id ?? null;
+        $metadata = PaymentResponseHelper::getMetadataArray($payment);
+        $orderId = $metadata['order_id'] ?? null;
         if ($orderId === null) {
             return [];
         }
@@ -127,9 +132,10 @@ class GetOrderIdsByTransactionId
      * The webhook is public, and other integrations on the same Mollie account can also use metadata.order_id.
      * The payment token is random and stored with the order, so it proves the payment was created for this order.
      */
-    private function hasPaymentTokenOfOrder(Payment $payment, OrderInterface $order): bool
+    private function hasPaymentTokenOfOrder(PaymentResponse $payment, OrderInterface $order): bool
     {
-        $token = (string) ($payment->metadata->payment_token ?? '');
+        $metadata = PaymentResponseHelper::getMetadataArray($payment);
+        $token = (string) ($metadata['payment_token'] ?? '');
         if ($token === '') {
             return false;
         }
@@ -142,7 +148,7 @@ class GetOrderIdsByTransactionId
      * still cancels the order when its own payment expires. An expired duplicate is left to ExpiredStatusProcessor,
      * which skips it itself while another payment of the order can still be paid.
      */
-    private function skipWhenFinallyUnsuccessful(string $existingTransactionId, Payment $payment): void
+    private function skipWhenFinallyUnsuccessful(string $existingTransactionId, PaymentResponse $payment): void
     {
         if ($payment->id === $existingTransactionId || !in_array($payment->status, self::SKIPPABLE_STATUSES, true)) {
             return;

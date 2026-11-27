@@ -15,7 +15,7 @@ use Magento\Framework\Api\SearchCriteriaBuilder;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderStatusHistoryRepositoryInterface;
 use Magento\Sales\Model\Order;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Models\Components\PaymentResponse;
 use Mollie\Payment\Api\Data\TransactionToOrderInterface;
 use Mollie\Payment\Api\TransactionToOrderRepositoryInterface;
 use Mollie\Payment\Model\Client\Payments\Processors\ExpiredStatusProcessor;
@@ -235,7 +235,7 @@ class ExpiredStatusProcessorTest extends IntegrationTestCase
         ));
     }
 
-    private function getMolliePayment(): Payment
+    private function getMolliePayment(): PaymentResponse
     {
         /** @var MolliePaymentBuilder $orderBuilder */
         $orderBuilder = $this->objectManager->create(MolliePaymentBuilder::class);

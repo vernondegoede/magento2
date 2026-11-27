@@ -19,6 +19,7 @@ use Magento\Framework\Controller\ResultFactory;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\UrlInterface;
 use Magento\Store\Model\StoreManagerInterface;
+use Mollie\Api\Models\Operations\RequestApplePayPaymentSessionRequestBody;
 use Mollie\Payment\Config;
 use Mollie\Payment\Model\Mollie;
 
@@ -47,12 +48,14 @@ class ApplePayValidation extends Action implements HttpPostActionInterface
             $store = $this->storeManager->getStore();
             $api = $this->mollie->loadMollieApi($this->getLiveApiKey((int) $store->getId()));
 
-            $result = $api->wallets->requestApplePayPaymentSession(
-                $this->http->parse($this->url->getBaseUrl())->getHost(),
-                $validationUrl,
+            $result = $api->wallets->requestApplePaySession(
+                new RequestApplePayPaymentSessionRequestBody(
+                    validationUrl: $validationUrl,
+                    domain: (string) $this->http->parse($this->url->getBaseUrl())->getHost(),
+                ),
             );
 
-            $response->setData($result->toArray());
+            $response->setData($result->entitySession2 ?? []);
         } catch (Exception $e) {
             $response->setHttpResponseCode(400);
             $response->setData(['error' => true, 'message' => $e->getMessage()]);

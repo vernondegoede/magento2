@@ -9,17 +9,11 @@ declare(strict_types=1);
 
 namespace Mollie\Payment\Service\Mollie\SelfTests;
 
-use Mollie\Api\CompatibilityChecker;
-
 class TestJsonExtension extends AbstractSelfTest
 {
-    public function __construct(
-        private CompatibilityChecker $compatibilityChecker
-    ) {}
-
     public function execute(): void
     {
-        if ($this->compatibilityChecker->satisfiesJsonExtension()) {
+        if (extension_loaded('json') && function_exists('json_encode')) {
             $message = __('Success: JSON is enabled.');
             $this->addMessage('success', $message);
 

@@ -9,13 +9,13 @@ declare(strict_types=1);
 namespace Mollie\Payment\Model\Client;
 
 use Magento\Sales\Api\Data\OrderInterface;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Models\Components\PaymentResponse;
 
 interface PaymentProcessorInterface
 {
     public function process(
         OrderInterface $magentoOrder,
-        Payment $molliePayment,
+        PaymentResponse $molliePayment,
         string $type,
         ProcessTransactionResponse $response,
     ): ?ProcessTransactionResponse;

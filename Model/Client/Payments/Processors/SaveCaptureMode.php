@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Mollie\Payment\Model\Client\Payments\Processors;
 
 use Magento\Sales\Api\Data\OrderInterface;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Models\Components\PaymentResponse;
 use Mollie\Payment\Model\Adminhtml\Source\CaptureMode;
 use Mollie\Payment\Model\Client\PaymentProcessorInterface;
 use Mollie\Payment\Model\Client\ProcessTransactionResponse;
@@ -28,17 +28,18 @@ class SaveCaptureMode implements PaymentProcessorInterface
 
     public function process(
         OrderInterface $magentoOrder,
-        Payment $molliePayment,
+        PaymentResponse $molliePayment,
         string $type,
         ProcessTransactionResponse $response,
     ): ?ProcessTransactionResponse {
-        if (!in_array($molliePayment->captureMode, self::KNOWN_CAPTURE_MODES, true)) {
+        $captureMode = $molliePayment->captureMode?->value;
+        if (!in_array($captureMode, self::KNOWN_CAPTURE_MODES, true)) {
             return $response;
         }
 
         $magentoOrder->getPayment()->setAdditionalInformation(
             CanUseManualCapture::CAPTURE_MODE,
-            $molliePayment->captureMode,
+            $captureMode,
         );
 
         return $response;

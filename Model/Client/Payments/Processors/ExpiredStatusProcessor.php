@@ -11,7 +11,7 @@ namespace Mollie\Payment\Model\Client\Payments\Processors;
 use IntlDateFormatter;
 use Magento\Framework\Stdlib\DateTime\TimezoneInterface;
 use Magento\Sales\Api\Data\OrderInterface;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Models\Components\PaymentResponse;
 use Mollie\Payment\Model\Client\PaymentProcessorInterface;
 use Mollie\Payment\Model\Client\ProcessTransactionResponse;
 use Mollie\Payment\Model\Client\ProcessTransactionResponseFactory;
@@ -33,7 +33,7 @@ class ExpiredStatusProcessor implements PaymentProcessorInterface
 
     public function process(
         OrderInterface $magentoOrder,
-        Payment $molliePayment,
+        PaymentResponse $molliePayment,
         string $type,
         ProcessTransactionResponse $response,
     ): ?ProcessTransactionResponse {
@@ -101,12 +101,12 @@ class ExpiredStatusProcessor implements PaymentProcessorInterface
 
     private function createUnsuccessfulResponse(
         OrderInterface $order,
-        Payment $molliePayment,
+        PaymentResponse $molliePayment,
         string $type,
     ): ProcessTransactionResponse {
         return $this->processTransactionResponseFactory->create([
             'success' => false,
-            'status' => $molliePayment->status,
+            'status' => $molliePayment->status->value,
             'order_id' => $order->getEntityId(),
             'type' => $type,
         ]);

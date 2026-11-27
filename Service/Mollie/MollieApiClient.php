@@ -10,62 +10,89 @@ namespace Mollie\Payment\Service\Mollie;
 
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Module\Manager;
+use Mollie\Api\Client;
+use Mollie\Api\Models\Components\Security;
 use Mollie\Payment\Config;
+use Mollie\Payment\Service\Mollie\Wrapper\FallbackApiKeyMiddleware;
 use Mollie\Payment\Service\Mollie\Wrapper\FetchFallbackApiKeys;
-use Mollie\Payment\Service\Mollie\Wrapper\MollieApiClientFallbackWrapper;
-use Mollie\Payment\Service\Mollie\Wrapper\MollieApiClientFallbackWrapperFactory;
 
 class MollieApiClient
 {
     /**
-     * @var \Mollie\Api\MollieApiClient[]
+     * @var array<string, Client>
      */
-    private $instances = [];
+    private array $instances = [];
 
     public function __construct(
         private Config $config,
-        private MollieApiClientFallbackWrapperFactory $mollieApiClientWrapperFactory,
         private FetchFallbackApiKeys $fetchFallbackApiKeys,
         private Manager $moduleManager,
-        private CreateHttpAdapter $createHttpAdapter
+        private CreateHttpAdapter $createHttpAdapter,
     ) {}
 
-    public function loadByStore(?int $storeId = null): \Mollie\Api\MollieApiClient
+    public function loadByStore(?int $storeId = null): Client
     {
-        if (!class_exists('Mollie\Api\MollieApiClient')) {
-            throw new LocalizedException(__('Class Mollie\Api\MollieApiClient does not exist'));
+        if (!class_exists(Client::class)) {
+            throw new LocalizedException(__('Class Mollie\Api\Client does not exist'));
         }
 
         return $this->loadByApiKey($this->config->getApiKey($storeId));
     }
 
-    public function loadByApiKey(string $apiKey): \Mollie\Api\MollieApiClient
+    public function loadByApiKey(string $apiKey): Client
     {
+        $apiKey = trim($apiKey);
         if (isset($this->instances[$apiKey])) {
             return $this->instances[$apiKey];
         }
 
-        /** @var MollieApiClientFallbackWrapper $mollieApiClient */
-        $mollieApiClient = $this->mollieApiClientWrapperFactory->create([
-            'client' => $this->createHttpAdapter->execute(),
-        ]);
-        $mollieApiClient->setFallbackApiKeysInstance($this->fetchFallbackApiKeys);
+        $httpClient = $this->createHttpAdapter->execute(
+            new FallbackApiKeyMiddleware($this->fetchFallbackApiKeys),
+        );
 
-        $mollieApiClient->setApiKey($apiKey);
-        $mollieApiClient->addVersionString('Magento/' . $this->config->getMagentoVersion());
-        $mollieApiClient->addVersionString('MagentoEdition/' . $this->config->getMagentoEdition());
-        $mollieApiClient->addVersionString('MollieMagento2/' . $this->config->getVersion());
-
-        if ($this->moduleManager->isEnabled('Hyva_Theme')) {
-            $mollieApiClient->addVersionString('HyvaTheme');
-        }
-
-        if ($this->moduleManager->isEnabled('Hyva_Checkout')) {
-            $mollieApiClient->addVersionString('HyvaCheckout');
-        }
+        $mollieApiClient = Client::builder()
+            ->setClient($httpClient)
+            ->setSecurity(new Security(apiKey: $apiKey))
+            ->setCustomUserAgent($this->buildCustomUserAgent())
+            ->build();
 
         $this->instances[$apiKey] = $mollieApiClient;
 
         return $mollieApiClient;
+    }
+
+    /**
+     * @throws LocalizedException
+     */
+    public function validateApiKey(string $apiKey): void
+    {
+        $apiKey = trim($apiKey);
+        if (!preg_match('/^(live|test)_\w{30,}$/', $apiKey)) {
+            throw new LocalizedException(
+                __(
+                    "Invalid API key: '%1'. An API key must start with 'test_' or 'live_' and must be at least 30 characters long.",
+                    $apiKey,
+                )
+            );
+        }
+    }
+
+    private function buildCustomUserAgent(): string
+    {
+        $parts = [
+            'Magento/' . $this->config->getMagentoVersion(),
+            'MagentoEdition/' . $this->config->getMagentoEdition(),
+            'MollieMagento2/' . $this->config->getVersion(),
+        ];
+
+        if ($this->moduleManager->isEnabled('Hyva_Theme')) {
+            $parts[] = 'HyvaTheme';
+        }
+
+        if ($this->moduleManager->isEnabled('Hyva_Checkout')) {
+            $parts[] = 'HyvaCheckout';
+        }
+
+        return implode(' ', $parts);
     }
 }

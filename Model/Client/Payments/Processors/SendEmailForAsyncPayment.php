@@ -10,7 +10,7 @@ namespace Mollie\Payment\Model\Client\Payments\Processors;
 
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Model\Order;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Models\Components\PaymentResponse;
 use Mollie\Payment\Helper\General;
 use Mollie\Payment\Model\Client\PaymentProcessorInterface;
 use Mollie\Payment\Model\Client\ProcessTransactionResponse;
@@ -31,11 +31,12 @@ class SendEmailForAsyncPayment implements PaymentProcessorInterface
 
     public function process(
         OrderInterface $magentoOrder,
-        Payment $molliePayment,
+        PaymentResponse $molliePayment,
         string $type,
         ProcessTransactionResponse $response,
     ): ?ProcessTransactionResponse {
-        if (!$this->asyncPaymentMethods->contains($molliePayment->method) || $magentoOrder->getEmailSent()) {
+        $method = $molliePayment->method?->value;
+        if ($method === null || !$this->asyncPaymentMethods->contains($method) || $magentoOrder->getEmailSent()) {
             return $response;
         }
 
@@ -49,7 +50,7 @@ class SendEmailForAsyncPayment implements PaymentProcessorInterface
 
         return $this->processTransactionResponseFactory->create([
             'success' => true,
-            'status' => $molliePayment->status,
+            'status' => $molliePayment->status->value,
             'order_id' => $magentoOrder->getId(),
             'type' => $type,
         ]);

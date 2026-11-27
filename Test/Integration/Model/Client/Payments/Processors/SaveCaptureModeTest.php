@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Mollie\Payment\Test\Integration\Model\Client\Payments\Processors;
 
 use Magento\Sales\Api\Data\OrderInterface;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Models\Components\PaymentResponse;
 use Mollie\Payment\Model\Adminhtml\Source\CaptureMode;
 use Mollie\Payment\Model\Client\Payments\Processors\SaveCaptureMode;
 use Mollie\Payment\Model\Client\ProcessTransactionResponse;
@@ -66,17 +66,16 @@ class SaveCaptureModeTest extends IntegrationTestCase
         );
     }
 
-    private function molliePaymentWithCaptureMode(?string $captureMode): Payment
+    private function molliePaymentWithCaptureMode(?string $captureMode): PaymentResponse
     {
         /** @var MolliePaymentBuilder $paymentBuilder */
         $paymentBuilder = $this->objectManager->create(MolliePaymentBuilder::class);
-        $molliePayment = $paymentBuilder->build();
-        $molliePayment->captureMode = $captureMode;
+        $paymentBuilder->setCaptureMode($captureMode);
 
-        return $molliePayment;
+        return $paymentBuilder->build();
     }
 
-    private function process(OrderInterface $order, Payment $molliePayment): void
+    private function process(OrderInterface $order, PaymentResponse $molliePayment): void
     {
         $this->objectManager->create(SaveCaptureMode::class)->process(
             $order,

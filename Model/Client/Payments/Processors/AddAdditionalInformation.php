@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Mollie\Payment\Model\Client\Payments\Processors;
 
 use Magento\Sales\Api\Data\OrderInterface;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Models\Components\PaymentResponse;
 use Mollie\Payment\Model\Client\PaymentProcessorInterface;
 use Mollie\Payment\Model\Client\ProcessTransactionResponse;
 use Mollie\Payment\Service\Mollie\DashboardUrl;
@@ -24,18 +24,18 @@ class AddAdditionalInformation implements PaymentProcessorInterface
 
     public function process(
         OrderInterface $order,
-        Payment $molliePayment,
+        PaymentResponse $molliePayment,
         string $type,
         ProcessTransactionResponse $response,
     ): ?ProcessTransactionResponse {
         $magentoPayment = $order->getPayment();
-        $dashboardUrl = $molliePayment->_links->dashboard->href
+        $dashboardUrl = $molliePayment->links->dashboard->href
             ?? $this->dashboardUrl->forPaymentsApi(storeId($order->getStoreId()), $molliePayment->id);
         $magentoPayment->setAdditionalInformation('dashboard_url', $dashboardUrl);
         $magentoPayment->setAdditionalInformation('mollie_id', $molliePayment->id);
-        $magentoPayment->setAdditionalInformation('method', $molliePayment->method);
+        $magentoPayment->setAdditionalInformation('method', $molliePayment->method?->value);
 
-        $status = $molliePayment->status;
+        $status = $molliePayment->status->value;
         if ($type == 'webhook' && ($magentoPayment->getAdditionalInformation()['payment_status'] ?? null) !== $status) {
             $magentoPayment->setAdditionalInformation('payment_status', $status);
         }

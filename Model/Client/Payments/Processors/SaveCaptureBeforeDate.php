@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Mollie\Payment\Model\Client\Payments\Processors;
 
 use Magento\Sales\Api\Data\OrderInterface;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Models\Components\PaymentResponse;
 use Mollie\Payment\Model\Client\PaymentProcessorInterface;
 use Mollie\Payment\Model\Client\ProcessTransactionResponse;
 use Mollie\Payment\Service\Mollie\Order\CanUseManualCapture;
@@ -22,7 +22,7 @@ class SaveCaptureBeforeDate implements PaymentProcessorInterface
 
     public function process(
         OrderInterface $magentoOrder,
-        Payment $molliePayment,
+        PaymentResponse $molliePayment,
         string $type,
         ProcessTransactionResponse $response,
     ): ?ProcessTransactionResponse {

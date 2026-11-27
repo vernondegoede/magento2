@@ -10,13 +10,11 @@ namespace Mollie\Payment\Test\Integration\Service\Mollie;
 
 use Magento\Quote\Api\Data\CartInterface;
 use Magento\TestFramework\Quote\Model\GetQuoteByReservedOrderId;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\PendingRequest;
-use Mollie\Api\MollieApiClient;
-use Mollie\Payment\Service\Mollie\Api\CreateSessionRequest;
 use Mollie\Payment\Service\Mollie\CreateSession;
-use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\FakeHttpClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
+use Psr\Http\Message\RequestInterface;
 
 /**
  * Separate from CreateSessionTest: Magento caches tax rates in shared instances, and the app is only reset between
@@ -42,9 +40,9 @@ class CreateSessionVatTest extends IntegrationTestCase
 
         $this->objectManager->create(CreateSession::class)->execute($this->loadQuote(), false);
 
-        $client->assertSent(function (PendingRequest $request): bool {
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $payload): bool {
             $shippingLines = array_values(array_filter(
-                $this->extractLines($request),
+                $payload['lines'] ?? [],
                 static fn (array $line): bool => $line['type'] === 'shipping_fee',
             ));
 
@@ -69,9 +67,9 @@ class CreateSessionVatTest extends IntegrationTestCase
 
         $this->objectManager->create(CreateSession::class)->execute($this->loadQuote(), false);
 
-        $client->assertSent(function (PendingRequest $request): bool {
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $payload): bool {
             $lines = array_filter(
-                $this->extractLines($request),
+                $payload['lines'] ?? [],
                 static fn (array $line): bool => in_array($line['type'], self::VAT_LINE_TYPES, true),
             );
 
@@ -99,8 +97,8 @@ class CreateSessionVatTest extends IntegrationTestCase
 
         $this->objectManager->create(CreateSession::class)->execute($cart, true);
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            $lines = $this->extractLines($request);
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $payload): bool {
+            $lines = $payload['lines'] ?? [];
 
             $this->assertNotEmpty($lines);
             foreach ($lines as $line) {
@@ -130,31 +128,11 @@ class CreateSessionVatTest extends IntegrationTestCase
         return number_format(round($totalAmount * $vatRate / (100 + $vatRate), 2), 2, '.', '');
     }
 
-    private function fakeSessionRequest(): MollieApiClient
+    private function fakeSessionRequest(): FakeHttpClient
     {
-        $client = MollieApiClient::fake([
-            CreateSessionRequest::class => MockResponse::ok('session'),
-        ], true);
-
-        /** @var FakeMollieApiClient $fake */
-        $fake = $this->objectManager->create(FakeMollieApiClient::class);
-        $fake->setInstance($client);
-        $this->objectManager->addSharedInstance($fake, \Mollie\Payment\Service\Mollie\MollieApiClient::class);
-
-        return $client;
-    }
-
-    /**
-     * @return array<int, array<string, mixed>>
-     */
-    private function extractLines(PendingRequest $request): array
-    {
-        $payload = $request->payload();
-        if ($payload !== null) {
-            return $payload->all()['lines'] ?? [];
-        }
-
-        return json_decode((string)$request->createPsrRequest()->getBody(), true)['lines'] ?? [];
+        return $this->loadFakeMollieApiClient()->fake([
+            'POST /v2/sessions' => MockResponse::session([], 201),
+        ]);
     }
 
     private function loadQuote(): CartInterface

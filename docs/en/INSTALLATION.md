@@ -7,7 +7,7 @@ This article is for developers and system administrators installing, updating, o
 Before installing, confirm the environment meets these requirements:
 
 - Magento Open Source or Adobe Commerce **2.4.5** or higher
-- PHP **8.1** or higher
+- PHP **8.2** or higher
 - Composer **2.x**
 - PHP extension `ext-json`
 
@@ -21,7 +21,7 @@ Run the following command from the Magento root directory:
 composer require mollie/magento2
 ```
 
-Composer will resolve and download the package along with its dependency `mollie/mollie-api-php`.
+Composer will resolve and download the package along with its dependency `mollie/php`.
 
 ### 2. Enable the module
 

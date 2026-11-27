@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Mollie\Payment\Test\Integration\Service\Mollie;
 
 use Magento\Framework\App\CacheInterface;
-use Mollie\Api\MollieApiClient;
+use Mollie\Api\Client;
 use Mollie\Payment\Model\Mollie;
 use Mollie\Payment\Service\Mollie\GetIssuers;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
@@ -25,7 +25,7 @@ class GetIssuersTest extends IntegrationTestCase
 
         $mollieModelMock = $this->createMock(Mollie::class);
         $mollieModelMock->method('getIssuers')->willReturn([$method]);
-        $mollieModelMock->method('getMollieApi')->willReturn(new MollieApiClient());
+        $mollieModelMock->method('getMollieApi')->willReturn(Client::builder()->build());
 
         $cacheMock = $this->createMock(CacheInterface::class);
 
@@ -53,7 +53,7 @@ class GetIssuersTest extends IntegrationTestCase
 
         $mollieModelMock = $this->createMock(Mollie::class);
         $mollieModelMock->method('getIssuers')->willReturn([$method]);
-        $mollieModelMock->method('getMollieApi')->willReturn(new MollieApiClient());
+        $mollieModelMock->method('getMollieApi')->willReturn(Client::builder()->build());
 
         $cacheMock = $this->createMock(CacheInterface::class);
 

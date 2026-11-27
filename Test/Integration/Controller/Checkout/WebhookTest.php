@@ -11,11 +11,10 @@ namespace Mollie\Payment\Test\Integration\Controller\Checkout;
 use Exception;
 use Magento\TestFramework\Request;
 use Magento\TestFramework\TestCase\AbstractController as ControllerTestCase;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\Requests\GetPaymentRequest;
 use Mollie\Payment\Service\Magento\GetOrderIdsByTransactionId;
 use Mollie\Payment\Service\Mollie\MollieApiClient;
 use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 
 class WebhookTest extends ControllerTestCase
 {
@@ -60,7 +59,7 @@ class WebhookTest extends ControllerTestCase
     {
         /** @var FakeMollieApiClient $fakeMollieApiClient */
         $fakeMollieApiClient = $this->_objectManager->get(FakeMollieApiClient::class);
-        $fakeMollieApiClient->fake([GetPaymentRequest::class => MockResponse::ok()]);
+        $fakeMollieApiClient->fake(['GET /v2/payments/*' => MockResponse::payment()]);
         $this->_objectManager->addSharedInstance($fakeMollieApiClient, MollieApiClient::class);
 
         $this->getRequest()->setParam('id', 'NON_EXISTING');

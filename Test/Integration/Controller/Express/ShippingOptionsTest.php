@@ -13,12 +13,10 @@ use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Api\Data\CartInterface;
 use Magento\TestFramework\Quote\Model\GetQuoteByReservedOrderId;
 use Magento\TestFramework\TestCase\AbstractController;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\Requests\GetSessionRequest;
-use Mollie\Api\MollieApiClient;
 use Mollie\Payment\Config;
 use Mollie\Payment\Test\Fakes\Logger\MollieLoggerFake;
 use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 
 /**
  * Mollie posts the partial address the customer picked in the Express Component to this endpoint and expects the
@@ -183,18 +181,15 @@ class ShippingOptionsTest extends AbstractController
 
     private function fakeSession(array $metadata): void
     {
-        $client = MollieApiClient::fake([
-            GetSessionRequest::class => MockResponse::ok([
-                'resource' => 'session',
+        /** @var FakeMollieApiClient $fake */
+        $fake = $this->objectManager()->create(FakeMollieApiClient::class);
+        $fake->fake([
+            'GET /v2/sessions/*' => MockResponse::session([
                 'id' => self::SESSION_ID,
                 'status' => 'open',
                 'metadata' => $metadata,
             ]),
         ]);
-
-        /** @var FakeMollieApiClient $fake */
-        $fake = $this->objectManager()->create(FakeMollieApiClient::class);
-        $fake->setInstance($client);
         $this->objectManager()->addSharedInstance($fake, \Mollie\Payment\Service\Mollie\MollieApiClient::class);
     }
 

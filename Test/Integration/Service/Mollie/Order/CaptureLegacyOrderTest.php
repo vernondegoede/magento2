@@ -10,42 +10,41 @@ declare(strict_types=1);
 namespace Mollie\Payment\Test\Integration\Service\Mollie\Order;
 
 use Magento\Framework\Exception\LocalizedException;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\PendingRequest;
-use Mollie\Api\Http\Requests\DynamicPostRequest;
-use Mollie\Api\MollieApiClient;
 use Mollie\Payment\Service\Mollie\Order\CaptureLegacyOrder;
+use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
+use Psr\Http\Message\RequestInterface;
 
 class CaptureLegacyOrderTest extends IntegrationTestCase
 {
     public function testShipsTheLegacyOrderAndReturnsTheShipmentId(): void
     {
-        $client = MollieApiClient::fake([
-            DynamicPostRequest::class => MockResponse::created(
-                '{"resource":"shipment","id":"shp_abc123","orderId":"ord_legacy1"}',
-            ),
-        ]);
+        $fake = $this->fakeShipmentRequest(MockResponse::created([
+            'resource' => 'shipment',
+            'id' => 'shp_abc123',
+            'orderId' => 'ord_legacy1',
+        ]));
 
         $instance = $this->objectManager->create(CaptureLegacyOrder::class);
-        $result = $instance->execute($client, 'ord_legacy1');
+        $result = $instance->execute($fake->loadByStore(), 'ord_legacy1');
 
         $this->assertEquals('shp_abc123', $result);
     }
 
     public function testShipsTheWholeOrderWhenNoLinesAreProvided(): void
     {
-        $client = MollieApiClient::fake([
-            DynamicPostRequest::class => MockResponse::created(
-                '{"resource":"shipment","id":"shp_abc123","orderId":"ord_legacy1"}',
-            ),
-        ], true);
+        $fake = $this->fakeShipmentRequest(MockResponse::created([
+            'resource' => 'shipment',
+            'id' => 'shp_abc123',
+            'orderId' => 'ord_legacy1',
+        ]));
 
         $instance = $this->objectManager->create(CaptureLegacyOrder::class);
-        $instance->execute($client, 'ord_legacy1');
+        $instance->execute($fake->loadByStore(), 'ord_legacy1');
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            $this->assertArrayNotHasKey('lines', $this->payloadOf($request));
+        $fake->assertSent('POST /v2/orders/*/shipments', function (RequestInterface $request, array $payload): bool {
+            $this->assertArrayNotHasKey('lines', $payload);
 
             return true;
         });
@@ -53,45 +52,46 @@ class CaptureLegacyOrderTest extends IntegrationTestCase
 
     public function testShipsOnlyTheProvidedLinesForAPartialCapture(): void
     {
-        $client = MollieApiClient::fake([
-            DynamicPostRequest::class => MockResponse::created(
-                '{"resource":"shipment","id":"shp_abc123","orderId":"ord_legacy1"}',
-            ),
-        ], true);
+        $fake = $this->fakeShipmentRequest(MockResponse::created([
+            'resource' => 'shipment',
+            'id' => 'shp_abc123',
+            'orderId' => 'ord_legacy1',
+        ]));
 
         $lines = [['id' => 'odl_1', 'quantity' => 1]];
 
         $instance = $this->objectManager->create(CaptureLegacyOrder::class);
-        $result = $instance->execute($client, 'ord_legacy1', ['lines' => $lines]);
+        $result = $instance->execute($fake->loadByStore(), 'ord_legacy1', ['lines' => $lines]);
 
         $this->assertEquals('shp_abc123', $result);
 
-        $client->assertSent(function (PendingRequest $request) use ($lines): bool {
-            $this->assertSame($lines, $this->payloadOf($request)['lines'] ?? null);
+        $fake->assertSent('POST /v2/orders/*/shipments', function (RequestInterface $request, array $payload) use ($lines): bool {
+            $this->assertSame($lines, $payload['lines'] ?? null);
 
             return true;
         });
     }
 
-    private function payloadOf(PendingRequest $request): array
-    {
-        $payload = $request->payload();
-        if ($payload !== null) {
-            return $payload->all();
-        }
-
-        return json_decode((string)$request->createPsrRequest()->getBody(), true) ?? [];
-    }
-
     public function testThrowsWhenTheShipmentResponseHasNoId(): void
     {
-        $client = MollieApiClient::fake([
-            DynamicPostRequest::class => MockResponse::created('{"resource":"shipment","orderId":"ord_legacy1"}'),
-        ]);
+        $fake = $this->fakeShipmentRequest(MockResponse::created([
+            'resource' => 'shipment',
+            'orderId' => 'ord_legacy1',
+        ]));
 
         $instance = $this->objectManager->create(CaptureLegacyOrder::class);
 
         $this->expectException(LocalizedException::class);
-        $instance->execute($client, 'ord_legacy1');
+        $instance->execute($fake->loadByStore(), 'ord_legacy1');
+    }
+
+    private function fakeShipmentRequest(mixed $response): FakeMollieApiClient
+    {
+        $fake = $this->loadFakeMollieApiClient();
+        $fake->fake([
+            'POST /v2/orders/*/shipments' => $response,
+        ]);
+
+        return $fake;
     }
 }

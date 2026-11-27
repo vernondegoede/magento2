@@ -10,18 +10,25 @@ declare(strict_types=1);
 namespace Mollie\Payment\Service\Mollie\Order;
 
 use Magento\Sales\Api\Data\OrderInterface;
-use Mollie\Api\Types\PaymentStatus;
+use Mollie\Api\Client;
+use Mollie\Api\Models\Components\PaymentResponseStatus;
+use Mollie\Api\Models\Operations\GetPaymentRequest;
 use Mollie\Payment\Api\Data\TransactionToOrderInterface;
 use Mollie\Payment\Api\TransactionToOrderManagementInterface;
 use Mollie\Payment\Config;
-use Mollie\Payment\Helper\General;
 use Mollie\Payment\Service\Mollie\MollieApiClient;
 use Mollie\Payment\Service\Order\ExpiredOrderToTransaction;
 
 class GetTransactionId
 {
-    private const UNSUCCESSFUL_STATUSES = [PaymentStatus::CANCELED, PaymentStatus::FAILED];
-    private const OPEN_STATUSES = [PaymentStatus::OPEN, PaymentStatus::PENDING];
+    private const UNSUCCESSFUL_STATUSES = [
+        PaymentResponseStatus::Canceled->value,
+        PaymentResponseStatus::Failed->value,
+    ];
+    private const OPEN_STATUSES = [
+        PaymentResponseStatus::Open->value,
+        PaymentResponseStatus::Pending->value,
+    ];
 
     public function __construct(
         private readonly TransactionToOrderManagementInterface $transactionToOrderManagement,
@@ -35,7 +42,6 @@ class GetTransactionId
      * transaction that has the status 'paid' or 'authorized'. This is to prevent issues where one transaction
      * is 'paid', but the other 'pending' transaction transitions to 'canceled'. This code prevents the order
      * to get canceled in that case.
-     *
      *
      * @param OrderInterface $order
      * @return string|null
@@ -61,7 +67,7 @@ class GetTransactionId
 
         $statuses = $this->getTransactionStatuses($order, $transactions);
         foreach ($statuses as $transactionId => $status) {
-            if (in_array($status, [PaymentStatus::PAID, PaymentStatus::AUTHORIZED], true)) {
+            if (in_array($status, [PaymentResponseStatus::Paid->value, PaymentResponseStatus::Authorized->value], true)) {
                 $order->setMollieTransactionId($transactionId);
 
                 return $transactionId;
@@ -116,10 +122,12 @@ class GetTransactionId
         return $results;
     }
 
-    private function getPaymentsApiStatus(\Mollie\Api\MollieApiClient $mollieApiClient, string $transactionId): string
+    private function getPaymentsApiStatus(Client $mollieApiClient, string $transactionId): string
     {
-        $transaction = $mollieApiClient->payments->get($transactionId);
+        $transaction = $mollieApiClient->payments
+            ->get(new GetPaymentRequest(paymentId: $transactionId))
+            ->paymentResponse;
 
-        return $transaction->status;
+        return $transaction->status->value;
     }
 }

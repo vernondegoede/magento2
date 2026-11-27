@@ -12,6 +12,7 @@ use Magento\Customer\Api\CustomerRepositoryInterface;
 use Magento\Customer\Model\Session;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Framework\Exception\NoSuchEntityException;
+use Mollie\Api\Models\Operations\RevokeMandateRequest;
 
 class RevokeMandate
 {
@@ -39,7 +40,9 @@ class RevokeMandate
         }
 
         $api = $this->mollieApiClient->loadByStore($storeId);
-        // revokeForId throws if the mandate does not belong to this customer, providing authorization.
-        $api->mandates->revokeForId($mollieCustomerId, $mandateId);
+        // revoke throws if the mandate does not belong to this customer, providing authorization.
+        $api->mandates->revoke(
+            new RevokeMandateRequest(customerId: $mollieCustomerId, mandateId: $mandateId),
+        );
     }
 }

@@ -7,7 +7,7 @@ Dit artikel is bedoeld voor ontwikkelaars en systeembeheerders die Mollie Paymen
 Controleer voordat je installeert of de omgeving aan de volgende vereisten voldoet:
 
 - Magento Open Source of Adobe Commerce **2.4.5** of hoger
-- PHP **8.1** of hoger
+- PHP **8.2** of hoger
 - Composer **2.x**
 - PHP-extensie `ext-json`
 
@@ -21,7 +21,7 @@ Voer het volgende commando uit vanuit de Magento-rootmap:
 composer require mollie/magento2
 ```
 
-Composer lost het pakket op en downloadt het samen met de afhankelijkheid `mollie/mollie-api-php`.
+Composer lost het pakket op en downloadt het samen met de afhankelijkheid `mollie/php`.
 
 ### 2. Schakel de module in
 

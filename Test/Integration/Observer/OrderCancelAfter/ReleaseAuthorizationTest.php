@@ -8,15 +8,15 @@ declare(strict_types=1);
 
 namespace Mollie\Payment\Test\Integration\Observer\OrderCancelAfter;
 
+use GuzzleHttp\Psr7\Response;
 use Magento\Framework\Event;
 use Magento\Framework\Event\Observer;
 use Magento\Framework\Message\ManagerInterface;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\Requests\ReleasePaymentAuthorizationRequest;
 use Mollie\Payment\Observer\OrderCancelAfter\ReleaseAuthorization;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
 
 class ReleaseAuthorizationTest extends IntegrationTestCase
@@ -28,11 +28,11 @@ class ReleaseAuthorizationTest extends IntegrationTestCase
     public function testReleasesAuthorizationWhenNothingIsCaptured(): void
     {
         $fake = $this->loadFakeMollieApiClient();
-        $fake->fake([ReleasePaymentAuthorizationRequest::class => MockResponse::noContent()], true);
+        $fake->fake(['POST /v2/payments/*/release-authorization' => new Response(202)]);
 
         $this->execute($this->prepareOrder(0.0, 100.0));
 
-        $fake->loadByStore()->assertSent(ReleasePaymentAuthorizationRequest::class);
+        $fake->assertSent('POST /v2/payments/*/release-authorization');
     }
 
     /**
@@ -42,11 +42,11 @@ class ReleaseAuthorizationTest extends IntegrationTestCase
     public function testReleasesRemainingAuthorizationWhenPartiallyInvoiced(): void
     {
         $fake = $this->loadFakeMollieApiClient();
-        $fake->fake([ReleasePaymentAuthorizationRequest::class => MockResponse::noContent()], true);
+        $fake->fake(['POST /v2/payments/*/release-authorization' => new Response(202)]);
 
         $this->execute($this->prepareOrder(44.0, 76.0));
 
-        $fake->loadByStore()->assertSent(ReleasePaymentAuthorizationRequest::class);
+        $fake->assertSent('POST /v2/payments/*/release-authorization');
     }
 
     /**
@@ -56,11 +56,11 @@ class ReleaseAuthorizationTest extends IntegrationTestCase
     public function testDoesNotCallTheApiWhenFullyInvoiced(): void
     {
         $fake = $this->loadFakeMollieApiClient();
-        $fake->fake([ReleasePaymentAuthorizationRequest::class => MockResponse::noContent()], true);
+        $fake->fake(['POST /v2/payments/*/release-authorization' => new Response(202)]);
 
         $this->execute($this->prepareOrder(100.0, 100.0));
 
-        $fake->loadByStore()->assertSentCount(0);
+        $fake->assertSentCount(0);
     }
 
     /**
@@ -70,11 +70,11 @@ class ReleaseAuthorizationTest extends IntegrationTestCase
     public function testDoesNotCallTheApiWhenCaptureIsAutomatic(): void
     {
         $fake = $this->loadFakeMollieApiClient();
-        $fake->fake([ReleasePaymentAuthorizationRequest::class => MockResponse::noContent()], true);
+        $fake->fake(['POST /v2/payments/*/release-authorization' => new Response(202)]);
 
         $this->execute($this->prepareOrder(0.0, 100.0));
 
-        $fake->loadByStore()->assertSentCount(0);
+        $fake->assertSentCount(0);
     }
 
     /**
@@ -85,9 +85,9 @@ class ReleaseAuthorizationTest extends IntegrationTestCase
     {
         $fake = $this->loadFakeMollieApiClient();
         $fake->fake([
-            ReleasePaymentAuthorizationRequest::class =>
-                MockResponse::unprocessableEntity('Finalized payments cannot be reversed.'),
-        ], true);
+            'POST /v2/payments/*/release-authorization' =>
+                MockResponse::error(422, 'Unprocessable Entity', 'Finalized payments cannot be reversed.'),
+        ]);
 
         $messageManager = $this->createMock(ManagerInterface::class);
         $messageManager->expects($this->once())->method('addWarningMessage');
@@ -106,12 +106,12 @@ class ReleaseAuthorizationTest extends IntegrationTestCase
     public function testKeepsTheAuthorizationWhenAnotherOrderOfThePaymentStillHasToBeCaptured(): void
     {
         $fake = $this->loadFakeMollieApiClient();
-        $fake->fake([ReleasePaymentAuthorizationRequest::class => MockResponse::noContent()], true);
+        $fake->fake(['POST /v2/payments/*/release-authorization' => new Response(202)]);
         [$canceledOrder] = $this->prepareSharedOrders();
 
         $this->execute($canceledOrder);
 
-        $fake->loadByStore()->assertSentCount(0);
+        $fake->assertSentCount(0);
         $this->assertStringContainsString('was not released', $this->allComments($canceledOrder));
     }
 
@@ -122,14 +122,14 @@ class ReleaseAuthorizationTest extends IntegrationTestCase
     public function testReleasesTheAuthorizationWhenTheOtherOrdersOfThePaymentAreCanceled(): void
     {
         $fake = $this->loadFakeMollieApiClient();
-        $fake->fake([ReleasePaymentAuthorizationRequest::class => MockResponse::noContent()], true);
+        $fake->fake(['POST /v2/payments/*/release-authorization' => new Response(202)]);
         [$canceledOrder, $otherOrder] = $this->prepareSharedOrders();
         $otherOrder->setState(Order::STATE_CANCELED);
         $this->objectManager->get(OrderRepositoryInterface::class)->save($otherOrder);
 
         $this->execute($canceledOrder);
 
-        $fake->loadByStore()->assertSent(ReleasePaymentAuthorizationRequest::class);
+        $fake->assertSent('POST /v2/payments/*/release-authorization');
     }
 
     /**
@@ -139,14 +139,14 @@ class ReleaseAuthorizationTest extends IntegrationTestCase
     public function testReleasesTheAuthorizationWhenTheOtherOrdersOfThePaymentAreFullyInvoiced(): void
     {
         $fake = $this->loadFakeMollieApiClient();
-        $fake->fake([ReleasePaymentAuthorizationRequest::class => MockResponse::noContent()], true);
+        $fake->fake(['POST /v2/payments/*/release-authorization' => new Response(202)]);
         [$canceledOrder, $otherOrder] = $this->prepareSharedOrders();
         $otherOrder->setBaseTotalInvoiced($otherOrder->getBaseGrandTotal());
         $this->objectManager->get(OrderRepositoryInterface::class)->save($otherOrder);
 
         $this->execute($canceledOrder);
 
-        $fake->loadByStore()->assertSent(ReleasePaymentAuthorizationRequest::class);
+        $fake->assertSent('POST /v2/payments/*/release-authorization');
     }
 
     /**

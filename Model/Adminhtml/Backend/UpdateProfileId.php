@@ -23,7 +23,7 @@ class UpdateProfileId
     public function execute(string $apiKey, string $scope, int $scopeId): void
     {
         $client = $this->mollieApiClient->loadByApiKey($apiKey);
-        $profile = $client->profiles->get('me');
+        $profile = $client->profiles->getCurrent()->profileResponse;
         $profileId = $profile->id;
 
         $this->configWriter->save(

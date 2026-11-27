@@ -19,14 +19,15 @@ use Magento\Payment\Helper\Data;
 use Magento\Payment\Model\MethodInterface;
 use Magento\Quote\Api\Data\CartInterface;
 use Magento\Store\Model\StoreManagerInterface;
-use Mollie\Api\Types\MethodQuery;
-use Mollie\Payment\Service\Mollie\Express\ExpressComponentsBeta;
 use Mollie\Payment\Config;
 use Mollie\Payment\Helper\General;
 use Mollie\Payment\Service\Checkout\PaymentMethodMessages;
+use Mollie\Payment\Service\Mollie\ApiExceptionHelper;
 use Mollie\Payment\Service\Mollie\ApplePay\SupportedNetworks;
+use Mollie\Payment\Service\Mollie\Express\ExpressComponentsBeta;
 use Mollie\Payment\Service\Mollie\GetCustomerMandates;
 use Mollie\Payment\Service\Mollie\GetIssuers;
+use Mollie\Payment\Service\Mollie\ListMethods;
 use Mollie\Payment\Service\Mollie\MethodParameters;
 use Mollie\Payment\Service\Mollie\MollieApiClient;
 use Mollie\Payment\Service\Mollie\PaymentMethods;
@@ -64,6 +65,7 @@ class MollieConfigProvider implements ConfigProviderInterface
         private CustomerSession $customerSession,
         private PaymentMethodMessages $paymentMethodMessages,
         private ExpressComponentsBeta $expressComponentsBeta,
+        private ListMethods $listMethods,
     )
     {
         foreach (PaymentMethods::METHODS as $code) {
@@ -99,8 +101,7 @@ class MollieConfigProvider implements ConfigProviderInterface
         try {
             $amount = $this->mollieHelper->getOrderAmountByQuote($cart);
             $parameters = [
-                'resource' => 'orders',
-                'includeWallets' => MethodQuery::WALLETS,
+                'includeWallets' => ListMethods::WALLETS,
                 'billingCountry' => $cart->getBillingAddress()?->getCountry(),
             ];
 
@@ -112,15 +113,23 @@ class MollieConfigProvider implements ConfigProviderInterface
             }
 
             $this->methodData = [];
-            $apiMethods = $mollieApi->methods->allEnabled($this->methodParameters->enhance($parameters, $cart));
+            $apiMethods = $this->listMethods->execute(
+                $mollieApi,
+                $this->methodParameters->enhance($parameters, $cart),
+            );
             foreach ($apiMethods as $method) {
-                $methodId = 'mollie_methods_' . $method->id;
+                $id = $method['id'] ?? null;
+                if (!is_string($id) || $id === '') {
+                    continue;
+                }
+
+                $methodId = 'mollie_methods_' . $id;
                 $this->methodData[$methodId] = [
-                    'image' => $method->image->size2x,
+                    'image' => $method['image']['size2x'] ?? '',
                 ];
             }
         } catch (Exception $e) {
-            $this->mollieHelper->addTolog('info', 'Function: getActiveMethods: ' . $e->getMessage());
+            $this->mollieHelper->addTolog('info', 'Function: getActiveMethods: ' . ApiExceptionHelper::getMessage($e));
             $this->methodData = [];
         }
 
@@ -215,7 +224,7 @@ class MollieConfigProvider implements ConfigProviderInterface
             $config['payment']['mollie']['creditcard']['consent_text'] = $isLoggedIn ? $this->savedCardConsentText->execute($storeId) : '';
             $config['payment']['mollie']['creditcard']['card_logo_base_url'] = $this->assetRepository->getUrl('Mollie_Payment::images/cards/');
         } catch (Exception $e) {
-            $this->mollieHelper->addTolog('error', 'Unable to load saved cards config: ' . $e->getMessage());
+            $this->mollieHelper->addTolog('error', 'Unable to load saved cards config: ' . ApiExceptionHelper::getMessage($e));
             $config['payment']['mollie']['creditcard']['saved_mandates'] = [];
             $config['payment']['mollie']['creditcard']['consent_text'] = '';
         }
@@ -237,7 +246,7 @@ class MollieConfigProvider implements ConfigProviderInterface
         try {
             $config['payment']['issuers'][$code] = $this->getIssuers->execute($code, $issuerListType);
         } catch (Exception $exception) {
-            $this->config->addTolog('error', 'Unable to load issuers: ' . $exception->getMessage());
+            $this->config->addTolog('error', 'Unable to load issuers: ' . ApiExceptionHelper::getMessage($exception));
             $config['payment']['issuers'][$code] = [];
         }
 

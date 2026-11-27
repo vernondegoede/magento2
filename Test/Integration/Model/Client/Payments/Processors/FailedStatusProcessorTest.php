@@ -8,6 +8,8 @@ declare(strict_types=1);
 
 namespace Mollie\Payment\Test\Integration\Model\Client\Payments\Processors;
 
+use Mollie\Api\Models\Components\PaymentDetails;
+use Mollie\Api\Models\Components\PaymentDetailsFailureReasonResponse;
 use Mollie\Payment\Model\Client\Payments\Processors\FailedStatusProcessor;
 use Mollie\Payment\Model\Client\ProcessTransactionResponse;
 use Mollie\Payment\Service\Mollie\PaymentFailureReason;
@@ -27,11 +29,11 @@ class FailedStatusProcessorTest extends IntegrationTestCase
         $paymentBuilder = $this->objectManager->create(MolliePaymentBuilder::class);
         $paymentBuilder->setAmount(100, 'USD');
         $paymentBuilder->setStatus('failed');
+        $paymentBuilder->setDetails(new PaymentDetails(
+            failureReason: PaymentDetailsFailureReasonResponse::CardDeclined,
+            failureMessage: 'Your card was declined.',
+        ));
         $molliePayment = $paymentBuilder->build();
-        $molliePayment->details = (object) [
-            'failureReason' => 'card_declined',
-            'failureMessage' => 'Your card was declined.',
-        ];
 
         $result = $this->objectManager->get(FailedStatusProcessor::class)->process(
             $order,

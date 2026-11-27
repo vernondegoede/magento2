@@ -12,7 +12,8 @@ use Magento\Quote\Api\Data\CartInterface;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\TestFramework\Quote\Model\GetQuoteByReservedOrderId;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Models\Components\PaymentResponse;
+use Mollie\Api\Models\Components\PaymentResponseBillingAddress;
 use Mollie\Payment\Api\PaymentTokenRepositoryInterface;
 use Mollie\Payment\Service\Mollie\Order\ConvertComponentsPaymentToOrder;
 use Mollie\Payment\Service\PaymentToken\PaymentTokenForQuote;
@@ -87,8 +88,7 @@ class ConvertComponentsPaymentToOrderTest extends IntegrationTestCase
     public function testPlacesTheOrderWhenMollieOnlyCollectedTheEmail(): void
     {
         $payment = $this->buildPayment('tr_expressemailonly');
-        $payment->billingAddress = new \stdClass();
-        $payment->billingAddress->email = 'guest@example.com';
+        $payment->billingAddress = new PaymentResponseBillingAddress(email: 'guest@example.com');
         $payment->shippingAddress = null;
 
         $order = $this->convert($this->loadQuote(), $payment);
@@ -104,7 +104,8 @@ class ConvertComponentsPaymentToOrderTest extends IntegrationTestCase
     {
         $baseCart = $this->loadQuote();
         $payment = $this->buildPayment('tr_expresscartphone');
-        unset($payment->billingAddress->phone, $payment->shippingAddress->phone);
+        $payment->billingAddress->phone = null;
+        $payment->shippingAddress->phone = null;
 
         $order = $this->convert($baseCart, $payment);
 
@@ -121,7 +122,8 @@ class ConvertComponentsPaymentToOrderTest extends IntegrationTestCase
         $baseCart->getShippingAddress()->setTelephone(null);
         $baseCart->getBillingAddress()->setTelephone(null);
         $payment = $this->buildPayment('tr_expressnophone');
-        unset($payment->billingAddress->phone, $payment->shippingAddress->phone);
+        $payment->billingAddress->phone = null;
+        $payment->shippingAddress->phone = null;
 
         $order = $this->convert($baseCart, $payment);
 
@@ -149,14 +151,14 @@ class ConvertComponentsPaymentToOrderTest extends IntegrationTestCase
         $this->assertStringContainsString('Free Shipping', (string)$order->getShippingDescription());
     }
 
-    private function convert(CartInterface $baseCart, Payment $payment): OrderInterface
+    private function convert(CartInterface $baseCart, PaymentResponse $payment): OrderInterface
     {
         $this->objectManager->get(PaymentTokenForQuote::class)->execute($baseCart);
 
         return $this->objectManager->create(ConvertComponentsPaymentToOrder::class)->execute($baseCart, $payment);
     }
 
-    private function buildPayment(string $transactionId): Payment
+    private function buildPayment(string $transactionId): PaymentResponse
     {
         return $this->objectManager->get(ExpressPaymentBuilder::class)->build($transactionId);
     }

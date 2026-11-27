@@ -8,11 +8,9 @@ declare(strict_types=1);
 
 namespace Mollie\Payment\Test\Integration\Controller\Adminhtml\Action;
 
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\Requests\GetEnabledMethodsRequest;
-use Mollie\Api\Http\Requests\GetPaginatedTerminalsRequest;
-use Mollie\Api\MollieApiClient;
 use Mollie\Payment\Helper\Tests;
+use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Integration\BackendControllerTestCase;
 
 class ApikeyTest extends BackendControllerTestCase
@@ -103,12 +101,14 @@ class ApikeyTest extends BackendControllerTestCase
     {
         $mollieModelMock = $this->createMock(\Mollie\Payment\Service\Mollie\MollieApiClient::class);
         foreach (array_filter([$testApiKey, $liveApiKey]) as $key) {
-            $client = MollieApiClient::fake([
-                GetEnabledMethodsRequest::class => MockResponse::ok('method-list'),
-                GetPaginatedTerminalsRequest::class => MockResponse::ok('terminal-list'),
+            /** @var FakeMollieApiClient $fake */
+            $fake = $this->_objectManager->create(FakeMollieApiClient::class);
+            $fake->fake([
+                'GET /v2/methods' => MockResponse::ok('method-list'),
+                'GET /v2/terminals' => MockResponse::ok('terminal-list'),
             ]);
 
-            $mollieModelMock->method('loadByApiKey')->with($key)->willReturn($client);
+            $mollieModelMock->method('loadByApiKey')->with($key)->willReturn($fake->loadByApiKey($key));
         }
 
         $tests = $this->_objectManager->create(Tests::class, [
@@ -128,12 +128,14 @@ class ApikeyTest extends BackendControllerTestCase
     {
         $mollieModelMock = $this->createMock(\Mollie\Payment\Service\Mollie\MollieApiClient::class);
         foreach (array_filter([$testApiKey, $liveApiKey]) as $key) {
-            $client = MollieApiClient::fake([
-                GetEnabledMethodsRequest::class => MockResponse::ok('method-list'),
-                GetPaginatedTerminalsRequest::class => MockResponse::ok('terminal-list'),
+            /** @var FakeMollieApiClient $fake */
+            $fake = $this->_objectManager->create(FakeMollieApiClient::class);
+            $fake->fake([
+                'GET /v2/methods' => MockResponse::ok('method-list'),
+                'GET /v2/terminals' => MockResponse::ok('terminal-list'),
             ]);
 
-            $mollieModelMock->method('loadByApiKey')->with($key)->willReturn($client);
+            $mollieModelMock->method('loadByApiKey')->with($key)->willReturn($fake->loadByApiKey($key));
         }
 
         $tests = $this->_objectManager->create(Tests::class, [

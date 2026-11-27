@@ -10,17 +10,14 @@ namespace Mollie\Payment\Test\Integration\Model;
 
 use Magento\Quote\Api\Data\CartInterface;
 use Magento\Quote\Model\Quote;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\Data\Money;
-use Mollie\Api\Http\PendingRequest;
-use Mollie\Api\Http\Requests\GetEnabledMethodsRequest;
-use Mollie\Api\MollieApiClient;
 use Mollie\Payment\Config;
 use Mollie\Payment\Helper\General;
 use Mollie\Payment\Model\MollieConfigProvider;
 use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Psr\Http\Message\RequestInterface;
 
 class MollieConfigProviderTest extends IntegrationTestCase
 {
@@ -97,11 +94,9 @@ class MollieConfigProviderTest extends IntegrationTestCase
         $configMock->method('isModuleEnabled')->willReturn(true);
         $configMock->method('creditcardUseComponents')->willReturn($useComponents);
 
-        $api = new MollieApiClient();
-
         /** @var FakeMollieApiClient $fakeMollieApiClient */
         $fakeMollieApiClient = $this->objectManager->get(FakeMollieApiClient::class);
-        $fakeMollieApiClient->setInstance($api);
+        $fakeMollieApiClient->fake([]);
         $this->objectManager->addSharedInstance($fakeMollieApiClient, \Mollie\Payment\Service\Mollie\MollieApiClient::class);
 
         /** @var MollieConfigProvider $instance */
@@ -161,13 +156,11 @@ class MollieConfigProviderTest extends IntegrationTestCase
 
     public function testForwardsTheQuoteAmountAndCurrencyToTheMethodsApi(): void
     {
-        $client = MollieApiClient::fake([
-            GetEnabledMethodsRequest::class => MockResponse::ok('method-list'),
-        ]);
-
         /** @var FakeMollieApiClient $fakeMollieApiClient */
         $fakeMollieApiClient = $this->objectManager->get(FakeMollieApiClient::class);
-        $fakeMollieApiClient->setInstance($client);
+        $client = $fakeMollieApiClient->fake([
+            'GET /v2/methods' => MockResponse::ok('method-list'),
+        ]);
         $this->objectManager->addSharedInstance($fakeMollieApiClient, \Mollie\Payment\Service\Mollie\MollieApiClient::class);
 
         /** @var Quote $cart */
@@ -183,24 +176,24 @@ class MollieConfigProviderTest extends IntegrationTestCase
         $instance = $this->objectManager->create(MollieConfigProvider::class);
         $instance->getActiveMethods($cart);
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            $amount = $request->getRequest()->query()->all()['amount'] ?? null;
+        $client->assertSent('GET /v2/methods', function (RequestInterface $request, array $payload, array $options): bool {
+            $queryString = is_string($options['query'] ?? null)
+                ? $options['query']
+                : $request->getUri()->getQuery();
+            parse_str($queryString, $query);
 
-            return $amount instanceof Money
-                && $amount->currency === 'PLN'
-                && $amount->value === '34.00';
+            return ($query['amount']['currency'] ?? null) === 'PLN'
+                && ($query['amount']['value'] ?? null) === '34.00';
         });
     }
 
     public function testWhenNoActiveMethodsAvailableTheResultIsAnEmptyArray(): void
     {
-        $client = MollieApiClient::fake([
-            GetEnabledMethodsRequest::class => MockResponse::ok('{}'),
-        ]);
-
         /** @var FakeMollieApiClient $fakeMollieApiClient */
         $fakeMollieApiClient = $this->objectManager->get(FakeMollieApiClient::class);
-        $fakeMollieApiClient->setInstance($client);
+        $fakeMollieApiClient->fake([
+            'GET /v2/methods' => MockResponse::methodList([]),
+        ]);
         $this->objectManager->addSharedInstance($fakeMollieApiClient, \Mollie\Payment\Service\Mollie\MollieApiClient::class);
 
         /** @var MollieConfigProvider $instance */

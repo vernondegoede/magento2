@@ -12,9 +12,13 @@ use Magento\Framework\Pricing\PriceCurrencyInterface;
 use Magento\Sales\Api\Data\InvoiceInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
-use Mollie\Api\MollieApiClient as MollieApi;
+use Mollie\Api\Client;
+use Mollie\Api\Models\Components\AmountNullable;
+use Mollie\Api\Models\Components\EntityCapture;
+use Mollie\Api\Models\Operations\CreateCaptureRequest;
 use Mollie\Payment\Helper\General;
 use Mollie\Payment\Model\OrderLines;
+use Mollie\Payment\Service\Mollie\IdempotencyKeyGenerator;
 use Mollie\Payment\Service\Mollie\MollieApiClient;
 use Mollie\Payment\Service\Mollie\Order\CaptureLegacyOrder;
 use Mollie\Payment\Service\Mollie\Order\IsSharedTransaction;
@@ -33,6 +37,7 @@ class CapturePaymentForInvoice
         private OrderLines $orderLines,
         private ValidatePartialCapture $validatePartialCapture,
         private IsSharedTransaction $isSharedTransaction,
+        private IdempotencyKeyGenerator $idempotencyKeyGenerator,
     ) {
     }
 
@@ -52,7 +57,7 @@ class CapturePaymentForInvoice
         $mollieApi = $this->mollieApiClient->loadByStore(storeId($order->getStoreId()));
 
         $data = [
-            'description' => __('Capture for order %1', $order->getIncrementId()),
+            'description' => (string) __('Capture for order %1', $order->getIncrementId()),
         ];
         if (!$this->coversTheCompletePayment($invoice)) {
             $data['amount'] = $this->getAmount($invoice);
@@ -102,7 +107,7 @@ class CapturePaymentForInvoice
      * @param array<string, mixed> $data
      */
     private function capture(
-        MollieApi $mollieApi,
+        Client $mollieApi,
         InvoiceInterface $invoice,
         string $transactionId,
         array $data,
@@ -113,6 +118,21 @@ class CapturePaymentForInvoice
             return $this->captureLegacyOrder->execute($mollieApi, $transactionId, $payload);
         }
 
-        return $mollieApi->paymentCaptures->createForId($transactionId, $data)->id;
+        $amount = isset($data['amount'])
+            ? new AmountNullable(currency: $data['amount']['currency'], value: $data['amount']['value'])
+            : null;
+
+        $capture = $mollieApi->captures->create(
+            new CreateCaptureRequest(
+                paymentId: $transactionId,
+                idempotencyKey: $this->idempotencyKeyGenerator->generate(),
+                body: new EntityCapture(
+                    description: (string) $data['description'],
+                    amount: $amount,
+                ),
+            ),
+        );
+
+        return $capture->captureResponse->id;
     }
 }

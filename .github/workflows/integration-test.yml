@@ -9,8 +9,6 @@ jobs:
         include:
           - PHP_VERSION: php82-fpm
             MAGENTO_VERSION: 2.4.6-with-replacements
-          - PHP_VERSION: php81-fpm
-            MAGENTO_VERSION: 2.4.5-p14
           - PHP_VERSION: php84-fpm
             MAGENTO_VERSION: 2.4.9
     runs-on: ubuntu-latest
@@ -24,7 +22,11 @@ jobs:
         run: sed -i '/version/d' ./composer.json
 
       - name: Upload the code into the docker container
-        run: docker cp $(pwd) magento-project-community-edition:/data/extensions/ && docker exec magento-project-community-edition ./install-composer-package mollie/magento2:@dev
+        run: |
+          docker cp $(pwd) magento-project-community-edition:/data/extensions/
+          docker exec magento-project-community-edition composer config minimum-stability alpha
+          docker exec magento-project-community-edition composer config prefer-stable true
+          docker exec magento-project-community-edition ./install-composer-package mollie/magento2:@dev
 
       - name: Activate the extension
         run: docker exec magento-project-community-edition ./retry "php bin/magento module:enable Mollie_Payment && php bin/magento setup:upgrade"

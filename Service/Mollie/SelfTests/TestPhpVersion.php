@@ -9,25 +9,20 @@ declare(strict_types=1);
 
 namespace Mollie\Payment\Service\Mollie\SelfTests;
 
-use Mollie\Api\CompatibilityChecker;
-
 class TestPhpVersion extends AbstractSelfTest
 {
-    public function __construct(
-        private CompatibilityChecker $compatibilityChecker
-    ) {}
+    public const MIN_PHP_VERSION = '8.2.0';
 
     public function execute(): void
     {
-        if ($this->compatibilityChecker->satisfiesPhpVersion()) {
+        if (version_compare(PHP_VERSION, self::MIN_PHP_VERSION, '>=')) {
             $message = __('Success: PHP version: %1.', PHP_VERSION);
             $this->addMessage('success', $message);
 
             return;
         }
 
-        $minPhpVersion = $this->compatibilityChecker::MIN_PHP_VERSION;
-        $message = __('Error: The client requires PHP version >= %1, you have %2.', $minPhpVersion, PHP_VERSION);
+        $message = __('Error: The client requires PHP version >= %1, you have %2.', self::MIN_PHP_VERSION, PHP_VERSION);
         $this->addMessage('error', $message);
     }
 }

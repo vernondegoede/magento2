@@ -15,12 +15,11 @@ use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Store\Api\StoreRepositoryInterface;
 use Magento\Store\Model\ScopeInterface;
 use Magento\Store\Model\Website;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\Requests\GetProfileRequest;
 use Mollie\Payment\Config;
 use Mollie\Payment\Model\Adminhtml\Backend\ChangeApiMode;
 use Mollie\Payment\Model\Adminhtml\Backend\UpdateProfileId;
 use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
 
 /**
@@ -151,7 +150,7 @@ class ChangeApiModeTest extends IntegrationTestCase
     {
         $fakeMollieApiClient = $this->objectManager->create(FakeMollieApiClient::class);
         $fakeMollieApiClient->fake([
-            GetProfileRequest::class => MockResponse::ok(['id' => $profileId]),
+            'GET /v2/profiles/me' => MockResponse::profile(['id' => $profileId]),
         ]);
 
         $updateProfileId = $this->objectManager->create(UpdateProfileId::class, [

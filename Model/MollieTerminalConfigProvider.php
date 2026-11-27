@@ -10,7 +10,7 @@ namespace Mollie\Payment\Model;
 
 use Magento\Checkout\Model\ConfigProviderInterface;
 use Magento\Checkout\Model\Session;
-use Mollie\Api\Resources\Terminal;
+use Mollie\Api\Models\Components\ListEntityTerminalStatus;
 use Mollie\Payment\Service\Mollie\MollieApiClient;
 use Mollie\Payment\Service\Mollie\PointOfSaleAvailability;
 
@@ -31,22 +31,22 @@ class MollieTerminalConfigProvider implements ConfigProviderInterface
         }
 
         $mollieApiClient = $this->mollieApiClient->loadByStore(storeId($cart->getStoreId()));
-        $terminals = $mollieApiClient->terminals->page();
 
         $output = [];
-        /** @var Terminal $terminal */
-        foreach ($terminals as $terminal) {
-            if (!$terminal->isActive()) {
-                continue;
-            }
+        foreach ($mollieApiClient->terminals->list() as $page) {
+            foreach ($page->object?->embedded->terminals ?? [] as $terminal) {
+                if ($terminal->status !== ListEntityTerminalStatus::Active) {
+                    continue;
+                }
 
-            $output[] = [
-                'id' => $terminal->id,
-                'brand' => $terminal->brand,
-                'model' => $terminal->model,
-                'serialNumber' => $terminal->serialNumber,
-                'description' => $terminal->description,
-            ];
+                $output[] = [
+                    'id' => $terminal->id,
+                    'brand' => $terminal->brand->value ?? '',
+                    'model' => $terminal->model->value ?? '',
+                    'serialNumber' => $terminal->serialNumber,
+                    'description' => $terminal->description,
+                ];
+            }
         }
 
         return [

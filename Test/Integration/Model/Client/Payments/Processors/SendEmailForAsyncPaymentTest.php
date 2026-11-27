@@ -9,7 +9,7 @@ declare(strict_types=1);
 namespace Mollie\Payment\Test\Integration\Model\Client\Payments\Processors;
 
 use Magento\Sales\Model\Order;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Models\Components\PaymentResponse;
 use Mollie\Payment\Model\Client\Payments\Processors\SendEmailForAsyncPayment;
 use Mollie\Payment\Model\Client\ProcessTransactionResponse;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
@@ -61,7 +61,7 @@ class SendEmailForAsyncPaymentTest extends IntegrationTestCase
         $this->assertEquals($originalState, $order->getState());
     }
 
-    private function getMolliePayment(string $method, string $status): Payment
+    private function getMolliePayment(string $method, string $status): PaymentResponse
     {
         /** @var MolliePaymentBuilder $builder */
         $builder = $this->objectManager->create(MolliePaymentBuilder::class);

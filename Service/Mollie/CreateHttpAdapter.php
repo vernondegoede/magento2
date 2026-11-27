@@ -12,8 +12,6 @@ use Composer\CaBundle\CaBundle;
 use GuzzleHttp\Client;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\RequestOptions;
-use Mollie\Api\Contracts\HttpAdapterContract;
-use Mollie\Api\Http\Adapter\GuzzleMollieHttpAdapter;
 
 class CreateHttpAdapter
 {
@@ -22,16 +20,19 @@ class CreateHttpAdapter
         private int $connectTimeout = 2
     ) {}
 
-    public function execute(): HttpAdapterContract
+    public function execute(?callable $middleware = null): Client
     {
-        $client = new Client([
+        $handlerStack = HandlerStack::create();
+        if ($middleware !== null) {
+            $handlerStack->push($middleware, 'mollie-fallback-api-key');
+        }
+
+        return new Client([
             RequestOptions::VERIFY => CaBundle::getBundledCaBundlePath(),
             RequestOptions::TIMEOUT => $this->timeout,
             RequestOptions::CONNECT_TIMEOUT => $this->connectTimeout,
             RequestOptions::HTTP_ERRORS => false,
-            'handler' => HandlerStack::create(),
+            'handler' => $handlerStack,
         ]);
-
-        return new GuzzleMollieHttpAdapter($client);
     }
 }

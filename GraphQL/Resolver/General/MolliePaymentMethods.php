@@ -12,9 +12,9 @@ use Magento\Framework\GraphQl\Config\Element\Field;
 use Magento\Framework\GraphQl\Query\ResolverInterface;
 use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
 use Magento\Quote\Api\Data\CartInterfaceFactory;
-use Mollie\Api\Resources\Method;
-use Mollie\Api\Types\MethodQuery;
+use Mollie\Api\Models\Components\MethodStatus;
 use Mollie\Payment\Config;
+use Mollie\Payment\Service\Mollie\ListMethods;
 use Mollie\Payment\Service\Mollie\MethodParameters;
 use Mollie\Payment\Service\Mollie\MollieApiClient;
 
@@ -24,7 +24,8 @@ class MolliePaymentMethods implements ResolverInterface
         private MollieApiClient $mollieApiClient,
         private MethodParameters $methodParameters,
         private CartInterfaceFactory $cartFactory,
-        private Config $config
+        private Config $config,
+        private ListMethods $listMethods,
     ) {}
 
     /**
@@ -49,16 +50,16 @@ class MolliePaymentMethods implements ResolverInterface
         $apiMethods = $this->getMethods($amount, $currency, $storeId);
 
         $methods = [];
-        /** @var Method $method */
         foreach ($apiMethods as $method) {
-            if (!$this->config->isMethodActive($method->id, $storeId)) {
+            $methodId = $method['id'] ?? null;
+            if (!is_string($methodId) || $methodId === '' || !$this->config->isMethodActive($methodId, $storeId)) {
                 continue;
             }
 
             $methods[] = [
-                'code' => $method->id,
-                'name' => $this->config->getMethodTitle($method->id, $storeId),
-                'image' => $method->image->svg,
+                'code' => $methodId,
+                'name' => $this->config->getMethodTitle($methodId, $storeId),
+                'image' => $method['image']['svg'] ?? '',
             ];
         }
 
@@ -73,21 +74,21 @@ class MolliePaymentMethods implements ResolverInterface
     }
 
     /**
-     * @return array<int|string, Method>
+     * @return array<int, array<string, mixed>>
      */
     private function getMethods(float $amount, ?string $currency, int $storeId): array
     {
         $mollieApiClient = $this->mollieApiClient->loadByStore($storeId);
 
         if ($currency === null) {
-            $available = $mollieApiClient->methods->allEnabled([
-                'includeWallets' => MethodQuery::WALLETS,
+            $available = $this->listMethods->execute($mollieApiClient, [
+                'includeWallets' => ListMethods::WALLETS,
             ]);
-            $available = array_filter((array) $available, function (Method $method): bool {
-                return $method->status == 'activated';
-            });
 
-            return $available;
+            return array_values(array_filter(
+                $available,
+                static fn (array $method): bool => ($method['status'] ?? null) === MethodStatus::Activated->value,
+            ));
         }
 
         $parameters = [
@@ -95,11 +96,11 @@ class MolliePaymentMethods implements ResolverInterface
                 'value' => number_format($amount, 2, '.', ''),
                 'currency' => $currency,
             ],
-            'resource' => 'orders',
-            'includeWallets' => MethodQuery::WALLETS,
+            'includeWallets' => ListMethods::WALLETS,
         ];
 
-        return (array) $mollieApiClient->methods->allActive(
+        return $this->listMethods->execute(
+            $mollieApiClient,
             $this->methodParameters->enhance($parameters, $this->cartFactory->create()),
         );
     }

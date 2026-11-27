@@ -10,11 +10,10 @@ declare(strict_types=1);
 namespace Mollie\Payment\Test\Integration\Service\Mollie\Order;
 
 use Magento\Sales\Api\OrderRepositoryInterface;
-use Mollie\Api\MollieApiClient;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Models\Components\PaymentResponse;
 use Mollie\Payment\Service\Mollie\Order\CanRegisterCaptureNotification;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
-use stdClass;
+use Mollie\Payment\Test\Integration\MolliePaymentBuilder;
 
 class CanRegisterCaptureNotificationTest extends IntegrationTestCase
 {
@@ -30,10 +29,7 @@ class CanRegisterCaptureNotificationTest extends IntegrationTestCase
         /** @var CanRegisterCaptureNotification $instance */
         $instance = $this->objectManager->create(CanRegisterCaptureNotification::class);
 
-        $molliePayment = new Payment(new MollieApiClient());
-        $molliePayment->status = 'paid';
-        $molliePayment->amountCaptured = new stdClass();
-        $molliePayment->amountCaptured->value = -999;
+        $molliePayment = $this->createCapturedPayment(-999.0);
 
         $this->assertTrue($instance->execute($order, $molliePayment));
     }
@@ -51,10 +47,7 @@ class CanRegisterCaptureNotificationTest extends IntegrationTestCase
         /** @var CanRegisterCaptureNotification $instance */
         $instance = $this->objectManager->create(CanRegisterCaptureNotification::class);
 
-        $molliePayment = new Payment(new MollieApiClient());
-        $molliePayment->status = 'paid';
-        $molliePayment->amountCaptured = new stdClass();
-        $molliePayment->amountCaptured->value = -999;
+        $molliePayment = $this->createCapturedPayment(-999.0);
 
         $this->assertTrue($instance->execute($order, $molliePayment));
     }
@@ -74,10 +67,7 @@ class CanRegisterCaptureNotificationTest extends IntegrationTestCase
         /** @var CanRegisterCaptureNotification $instance */
         $instance = $this->objectManager->create(CanRegisterCaptureNotification::class);
 
-        $molliePayment = new Payment(new MollieApiClient());
-        $molliePayment->status = 'paid';
-        $molliePayment->amountCaptured = new stdClass();
-        $molliePayment->amountCaptured->value = 0;
+        $molliePayment = $this->createCapturedPayment(0.0);
 
         $this->assertFalse($instance->execute($order, $molliePayment));
     }
@@ -117,13 +107,11 @@ class CanRegisterCaptureNotificationTest extends IntegrationTestCase
         $this->assertFalse($instance->execute($orders[1], $this->createCapturedPayment(100.0)));
     }
 
-    private function createCapturedPayment(float $amountCaptured): Payment
+    private function createCapturedPayment(float $amountCaptured): PaymentResponse
     {
-        $molliePayment = new Payment(new MollieApiClient());
-        $molliePayment->status = 'paid';
-        $molliePayment->amountCaptured = new stdClass();
-        $molliePayment->amountCaptured->value = $amountCaptured;
-
-        return $molliePayment;
+        return (new MolliePaymentBuilder())
+            ->setStatus('paid')
+            ->setAmountCaptured($amountCaptured)
+            ->build();
     }
 }

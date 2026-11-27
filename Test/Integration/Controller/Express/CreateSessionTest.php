@@ -12,11 +12,10 @@ use Magento\Checkout\Model\Session;
 use Magento\Framework\App\Request\Http;
 use Magento\TestFramework\Quote\Model\GetQuoteByReservedOrderId;
 use Magento\TestFramework\TestCase\AbstractController;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\PendingRequest;
-use Mollie\Api\MollieApiClient;
-use Mollie\Payment\Service\Mollie\Api\CreateSessionRequest;
+use Mollie\Payment\Test\Fakes\Service\Mollie\FakeHttpClient;
 use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
+use Psr\Http\Message\RequestInterface;
 
 class CreateSessionTest extends AbstractController
 {
@@ -110,9 +109,7 @@ class CreateSessionTest extends AbstractController
 
         $this->assertEquals(200, $this->getResponse()->getHttpResponseCode());
         $this->assertSame($quotesBefore, $this->countQuotes());
-        $client->assertSent(function (PendingRequest $request): bool {
-            $body = json_decode((string)$request->createPsrRequest()->getBody(), true);
-
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $body): bool {
             $this->assertSame('10.00', $body['amount']['value']);
             $this->assertSame('product', $body['metadata']['placement']);
             $this->assertSame(['product' => '1', 'qty' => '1'], $body['metadata']['buyRequest']);
@@ -159,9 +156,7 @@ class CreateSessionTest extends AbstractController
 
         $this->dispatchCreateSession('mollie/express/createSession/type/cart');
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            $body = json_decode((string)$request->createPsrRequest()->getBody(), true);
-
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $body): bool {
             $this->assertArrayNotHasKey('shipping', $body);
             $this->assertContains('shipping_fee', array_column($body['lines'], 'type'));
 
@@ -217,9 +212,7 @@ class CreateSessionTest extends AbstractController
 
         $this->dispatchCreateSession($path);
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            $body = json_decode((string)$request->createPsrRequest()->getBody(), true);
-
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $body): bool {
             $this->assertArrayHasKey('shipping', $body);
             $this->assertArrayHasKey('callbackUrl', $body['shipping']);
             $this->assertNotContains('shipping_fee', array_column($body['lines'], 'type'));
@@ -247,17 +240,15 @@ class CreateSessionTest extends AbstractController
         return $quote;
     }
 
-    private function fakeSessionRequest(): MollieApiClient
+    private function fakeSessionRequest(): FakeHttpClient
     {
-        $client = MollieApiClient::fake([
-            CreateSessionRequest::class => MockResponse::ok('session'),
-        ], true);
-
         /** @var FakeMollieApiClient $fake */
         $fake = $this->_objectManager->create(FakeMollieApiClient::class);
-        $fake->setInstance($client);
+        $httpClient = $fake->fake([
+            'POST /v2/sessions' => MockResponse::created('session'),
+        ]);
         $this->_objectManager->addSharedInstance($fake, \Mollie\Payment\Service\Mollie\MollieApiClient::class);
 
-        return $client;
+        return $httpClient;
     }
 }

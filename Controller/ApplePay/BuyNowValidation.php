@@ -32,6 +32,7 @@ use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Api\GuestCartManagementInterface;
 use Magento\Quote\Api\GuestCartRepositoryInterface;
 use Magento\Store\Model\StoreManagerInterface;
+use Mollie\Api\Models\Operations\RequestApplePayPaymentSessionRequestBody;
 use Mollie\Payment\Config;
 use Mollie\Payment\Service\Mollie\MollieApiClient;
 
@@ -142,9 +143,11 @@ class BuyNowValidation extends Action implements HttpPostActionInterface
             $api = $this->mollieApiClient->loadByApiKey($this->getLiveApiKey((int) $store->getId()));
             $url = $this->url->getBaseUrl();
 
-            $result = $api->wallets->requestApplePayPaymentSession(
-                $this->uri->parse($url)->getHost(),
-                $validationUrl,
+            $result = $api->wallets->requestApplePaySession(
+                new RequestApplePayPaymentSessionRequestBody(
+                    validationUrl: $validationUrl,
+                    domain: (string) $this->uri->parse($url)->getHost(),
+                ),
             );
         } catch (Exception $exception) {
             $response->setHttpResponseCode(500);
@@ -160,7 +163,7 @@ class BuyNowValidation extends Action implements HttpPostActionInterface
             'cartId' => $cartId,
             'store_name' => $this->storeManager->getStore()->getName(),
             'amount' => $cart->getGrandTotal(),
-            'validationData' => $result->toArray(),
+            'validationData' => $result->entitySession2 ?? [],
         ]);
 
         return $response;

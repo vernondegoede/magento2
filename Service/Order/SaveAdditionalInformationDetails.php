@@ -10,6 +10,8 @@ namespace Mollie\Payment\Service\Order;
 
 use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Sales\Api\Data\OrderPaymentInterface;
+use Mollie\Api\Models\Components\PaymentDetails;
+use Mollie\Api\Utils\JSON;
 use Mollie\Payment\Config;
 use stdClass;
 
@@ -20,13 +22,18 @@ class SaveAdditionalInformationDetails
         private Config $config
     ) {}
 
-    public function execute(OrderPaymentInterface $payment, ?stdClass $details): void
+    public function execute(OrderPaymentInterface $payment, PaymentDetails|stdClass|null $details): void
     {
-        $details = json_encode($details);
-        if ($this->config->encryptPaymentDetails()) {
-            $details = $this->encryptor->encrypt($details);
+        if ($details instanceof PaymentDetails) {
+            $encoded = JSON::createSerializer()->serialize($details, 'json');
+        } else {
+            $encoded = json_encode($details);
         }
 
-        $payment->setAdditionalInformation('details', $details);
+        if ($this->config->encryptPaymentDetails()) {
+            $encoded = $this->encryptor->encrypt($encoded);
+        }
+
+        $payment->setAdditionalInformation('details', $encoded);
     }
 }

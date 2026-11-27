@@ -12,8 +12,12 @@ use Magento\Framework\Event\Observer;
 use Magento\Framework\Event\ObserverInterface;
 use Magento\Framework\Message\ManagerInterface;
 use Magento\Sales\Api\Data\OrderInterface;
-use Mollie\Api\Exceptions\ApiException;
+use Mollie\Api\Models\Errors\APIException;
+use Mollie\Api\Models\Errors\ErrorResponseThrowable;
+use Mollie\Api\Models\Operations\ReleaseAuthorizationRequest;
 use Mollie\Payment\Logger\MollieLogger;
+use Mollie\Payment\Service\Mollie\ApiExceptionHelper;
+use Mollie\Payment\Service\Mollie\IdempotencyKeyGenerator;
 use Mollie\Payment\Service\Mollie\MollieApiClient;
 use Mollie\Payment\Service\Mollie\Order\CanUseManualCapture;
 use Mollie\Payment\Service\Mollie\Order\IsAuthorizationNeededByOtherOrders;
@@ -26,6 +30,7 @@ class ReleaseAuthorization implements ObserverInterface
         private MollieLogger $logger,
         private ManagerInterface $messageManager,
         private IsAuthorizationNeededByOtherOrders $isAuthorizationNeededByOtherOrders,
+        private IdempotencyKeyGenerator $idempotencyKeyGenerator,
     ) {}
 
     public function execute(Observer $observer)
@@ -61,11 +66,17 @@ class ReleaseAuthorization implements ObserverInterface
         $mollieApi = $this->mollieApiClient->loadByStore(storeId($order->getStoreId()));
 
         try {
-            $mollieApi->payments->releaseAuthorization($mollieTransactionId);
-        } catch (ApiException $exception) {
+            $mollieApi->payments->releaseAuthorization(
+                new ReleaseAuthorizationRequest(
+                    paymentId: $mollieTransactionId,
+                    idempotencyKey: $this->idempotencyKeyGenerator->generate(),
+                ),
+            );
+        } catch (APIException|ErrorResponseThrowable $exception) {
+            $errorMessage = ApiExceptionHelper::getMessage($exception);
             $this->logger->addErrorLog(
                 'release_authorization',
-                'Could not release authorization for ' . $mollieTransactionId . ': ' . $exception->getMessage()
+                'Could not release authorization for ' . $mollieTransactionId . ': ' . $errorMessage
             );
 
             $this->messageManager->addWarningMessage(
@@ -74,7 +85,7 @@ class ReleaseAuthorization implements ObserverInterface
                     'released automatically: %2. Any uncaptured amount is released by Mollie when the authorization ' .
                     'expires.',
                     $mollieTransactionId,
-                    $exception->getMessage()
+                    $errorMessage
                 )
             );
         }

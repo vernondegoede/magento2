@@ -10,17 +10,12 @@ namespace Mollie\Payment\Test\Integration\GraphQL\Resolver\General;
 
 use Exception;
 use Magento\PageCache\Model\Cache\Type;
-use Mollie\Api\Fake\MockMollieClient;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\Data\Money;
-use Mollie\Api\Http\PendingRequest;
-use Mollie\Api\Http\Requests\GetEnabledMethodsRequest;
-use Mollie\Api\Http\Requests\GetPaginatedTerminalsRequest;
-use Mollie\Api\MollieApiClient;
-use Mollie\Api\Resources\Method;
+use Mollie\Payment\Service\Mollie\ListMethods;
+use Mollie\Payment\Test\Fakes\Service\Mollie\FakeHttpClient;
 use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Integration\GraphQLTestCase;
-use stdClass;
+use Psr\Http\Message\RequestInterface;
 use Zend_Cache;
 
 /**
@@ -100,12 +95,11 @@ class MolliePaymentMethodsTest extends GraphQLTestCase
             }
         ');
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            $amount = $request->getRequest()->query()->all()['amount'] ?? null;
+        $client->assertSent('GET /v2/methods', function (RequestInterface $request, array $payload, array $options): bool {
+            $query = $this->parseQuery($request, $options);
 
-            return $amount instanceof Money
-                && $amount->currency === 'PLN'
-                && $amount->value === '34.00';
+            return ($query['amount']['currency'] ?? null) === 'PLN'
+                && ($query['amount']['value'] ?? null) === '34.00';
         });
     }
 
@@ -124,8 +118,10 @@ class MolliePaymentMethodsTest extends GraphQLTestCase
             }
         ');
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            return $request->getRequest()->query()->get('includeWallets') === 'applepay,googlepay';
+        $client->assertSent('GET /v2/methods', function (RequestInterface $request, array $payload, array $options): bool {
+            $query = $this->parseQuery($request, $options);
+
+            return ($query['includeWallets'] ?? null) === ListMethods::WALLETS;
         });
     }
 
@@ -144,26 +140,26 @@ class MolliePaymentMethodsTest extends GraphQLTestCase
             }
         ');
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            return $request->getRequest()->query()->get('includeWallets') === 'applepay,googlepay';
+        $client->assertSent('GET /v2/methods', function (RequestInterface $request, array $payload, array $options): bool {
+            $query = $this->parseQuery($request, $options);
+
+            return ($query['includeWallets'] ?? null) === ListMethods::WALLETS;
         });
     }
 
-    private function fakeMollieApiClient(): MockMollieClient
+    private function fakeMollieApiClient(): FakeHttpClient
     {
         $this->loadFakeEncryptor()->addReturnValue('', 'test_dummyapikeythatisvalidandislongenough');
 
-        $client = MollieApiClient::fake([
-            GetEnabledMethodsRequest::class => MockResponse::ok('method-list'),
-            GetPaginatedTerminalsRequest::class => MockResponse::ok('terminal-list'),
-        ]);
-
         /** @var FakeMollieApiClient $fakeMollieApiClient */
         $fakeMollieApiClient = $this->objectManager->get(FakeMollieApiClient::class);
-        $fakeMollieApiClient->setInstance($client);
+        $httpClient = $fakeMollieApiClient->fake([
+            'GET /v2/methods' => MockResponse::ok('method-list'),
+            'GET /v2/terminals' => MockResponse::ok('terminal-list'),
+        ]);
         $this->objectManager->addSharedInstance($fakeMollieApiClient, \Mollie\Payment\Service\Mollie\MollieApiClient::class);
 
-        return $client;
+        return $httpClient;
     }
 
     private function callEndpoint(): array
@@ -182,22 +178,18 @@ class MolliePaymentMethodsTest extends GraphQLTestCase
         ')['molliePaymentMethods']['methods'];
     }
 
-    private function arrayToObject(array $array, bool $nested = false): stdClass|Method
+    /**
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    private function parseQuery(RequestInterface $request, array $options): array
     {
-        $client = $this->objectManager->get(MollieApiClient::class);
-        $method = new Method($client);
-        $method->status = 'activated';
+        $queryString = is_string($options['query'] ?? null)
+            ? $options['query']
+            : $request->getUri()->getQuery();
+        parse_str($queryString, $query);
 
-        $object = $nested ? new stdClass() : $method;
-        foreach ($array as $key => $value) {
-            if (is_array($value)) {
-                $value = $this->arrayToObject($value, true);
-            }
-
-            $object->$key = $value;
-        }
-
-        return $object;
+        return $query;
     }
 
     /**

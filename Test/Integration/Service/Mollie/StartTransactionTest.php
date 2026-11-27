@@ -11,14 +11,14 @@ namespace Mollie\Payment\Test\Integration\Service\Mollie;
 use Magento\Customer\Api\CustomerRepositoryInterface;
 use Magento\Framework\App\ResourceConnection;
 use Magento\Sales\Api\Data\OrderInterface;
-use Mollie\Api\Exceptions\ApiException;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\Requests\GetPaymentRequest;
+use Mollie\Api\Client;
+use Mollie\Api\Models\Errors\ErrorResponseThrowable;
 use Mollie\Payment\Api\Data\MollieCustomerInterface;
 use Mollie\Payment\Api\MollieCustomerRepositoryInterface;
 use Mollie\Payment\Model\Client\Payments;
 use Mollie\Payment\Service\Mollie\StartTransaction;
 use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
 
 class StartTransactionTest extends IntegrationTestCase
@@ -95,7 +95,7 @@ class StartTransactionTest extends IntegrationTestCase
     private function createInstance(Payments $paymentsApi): StartTransaction
     {
         $apiClient = $this->objectManager->create(FakeMollieApiClient::class);
-        $apiClient->setInstance(new \Mollie\Api\MollieApiClient());
+        $apiClient->setInstance(Client::builder()->build());
 
         return $this->objectManager->create(StartTransaction::class, [
             'paymentsApi' => $paymentsApi,
@@ -103,19 +103,9 @@ class StartTransactionTest extends IntegrationTestCase
         ]);
     }
 
-    private function createApiException(int $status, string $title, string $detail): ApiException
+    private function createApiException(int $status, string $title, string $detail): ErrorResponseThrowable
     {
-        $client = \Mollie\Api\MollieApiClient::fake([
-            GetPaymentRequest::class => MockResponse::error($status, $title, $detail),
-        ]);
-
-        try {
-            $client->send(new GetPaymentRequest('tr_dummy'));
-        } catch (ApiException $exception) {
-            return $exception;
-        }
-
-        $this->fail('Expected the faked request to result in an ApiException');
+        return MockResponse::errorThrowable($status, $title, $detail);
     }
 
     private function storeMollieCustomerId(OrderInterface $order, string $mollieCustomerId): void
