@@ -14,11 +14,13 @@ use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Quote\Api\Data\CartInterface;
 use Magento\Quote\Api\Data\CartInterfaceFactory;
 use Magento\TestFramework\Quote\Model\GetQuoteByReservedOrderId;
-use Mollie\Api\MollieApiClient;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Models\Components\PaymentResponse;
+use Mollie\Api\Models\Components\PaymentResponseLine;
+use Mollie\Payment\Service\Mollie\Express\ExpressPaymentResponseLine;
 use Mollie\Payment\Service\Mollie\Order\ConvertComponentsPaymentToOrder\SetShippingOnCart;
+use Mollie\Payment\Test\Integration\ExpressPaymentBuilder;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
-use stdClass;
+use Mollie\Payment\Test\Integration\MolliePaymentBuilder;
 
 class SetShippingOnCartTest extends IntegrationTestCase
 {
@@ -113,41 +115,24 @@ class SetShippingOnCartTest extends IntegrationTestCase
         return $cart;
     }
 
-    private function buildPayment(string $method, array $lines): Payment
+    private function buildPayment(string $method, array $lines): PaymentResponse
     {
-        $payment = new Payment(new MollieApiClient());
-        $payment->method = $method;
+        $payment = (new MolliePaymentBuilder())
+            ->setMethod($method)
+            ->build();
         $payment->lines = $lines;
 
         return $payment;
     }
 
-    private function productLine(string $sku = 'simple', string $name = 'Simple Product'): stdClass
+    private function productLine(string $sku = 'simple', string $name = 'Simple Product'): PaymentResponseLine
     {
-        $line = new stdClass();
-        $line->type = 'physical';
-        $line->description = '[' . $sku . '] ' . $name;
-        $line->quantity = 1;
-        $line->unitPrice = new stdClass();
-        $line->unitPrice->value = '10.00';
-        $line->totalAmount = new stdClass();
-        $line->totalAmount->value = '10.00';
-
-        return $line;
+        return (new ExpressPaymentBuilder())->productLine($sku, $name);
     }
 
-    private function shippingLine(string $value): stdClass
+    private function shippingLine(string $value): ExpressPaymentResponseLine
     {
-        $line = new stdClass();
-        $line->type = 'shipping_fee';
-        $line->description = 'Standard delivery';
-        $line->quantity = 1;
-        $line->unitPrice = new stdClass();
-        $line->unitPrice->value = $value;
-        $line->totalAmount = new stdClass();
-        $line->totalAmount->value = $value;
-
-        return $line;
+        return (new ExpressPaymentBuilder())->shippingLine($value);
     }
 
     private function assertCompositeSkuCannotBeResolvedByProductRepository(string $sku): void

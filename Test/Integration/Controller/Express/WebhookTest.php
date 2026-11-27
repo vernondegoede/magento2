@@ -10,10 +10,6 @@ namespace Mollie\Payment\Test\Integration\Controller\Express;
 
 use Magento\Framework\App\Request\Http;
 use Magento\TestFramework\TestCase\AbstractController;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\Requests\GetPaymentRequest;
-use Mollie\Api\Http\Requests\UpdatePaymentRequest;
-use Mollie\Api\MollieApiClient;
 use Mollie\Payment\Api\PaymentTokenRepositoryInterface;
 use Mollie\Payment\Model\Client\Payments\ProcessTransaction;
 use Mollie\Payment\Service\LockService;
@@ -22,6 +18,7 @@ use Mollie\Payment\Service\OrderLockService;
 use Mollie\Payment\Test\Fakes\Model\Client\Payments\ProcessTransactionFake;
 use Mollie\Payment\Test\Fakes\Service\LockServiceFake;
 use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Fakes\Service\OrderLockServiceFake;
 
 /**
@@ -81,14 +78,12 @@ class WebhookTest extends AbstractController
 
     private function fakeMollie(array $payment): void
     {
-        $client = MollieApiClient::fake([
-            GetPaymentRequest::class => MockResponse::ok($payment),
-            UpdatePaymentRequest::class => MockResponse::ok($payment),
-        ]);
-
         /** @var FakeMollieApiClient $fake */
         $fake = $this->_objectManager->create(FakeMollieApiClient::class);
-        $fake->setInstance($client);
+        $fake->fake([
+            'GET /v2/payments/*' => MockResponse::payment($payment),
+            'PATCH /v2/payments/*' => MockResponse::payment($payment),
+        ]);
         $this->_objectManager->addSharedInstance($fake, \Mollie\Payment\Service\Mollie\MollieApiClient::class);
 
         /** @var ProcessTransactionFake $processTransaction */

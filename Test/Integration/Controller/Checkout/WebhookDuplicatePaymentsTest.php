@@ -16,19 +16,17 @@ use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
 use Magento\TestFramework\Request;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Fake\SequenceMockResponse;
-use Mollie\Api\Http\PendingRequest;
-use Mollie\Api\Http\Requests\GetPaymentRequest;
-use Mollie\Api\MollieApiClient;
-use Mollie\Api\Types\PaymentStatus;
+use Mollie\Api\Models\Components\PaymentResponseStatus;
 use Mollie\Payment\Api\Data\TransactionToOrderInterface;
 use Mollie\Payment\Api\TransactionToOrderRepositoryInterface;
 use Mollie\Payment\Model\Methods\ApplePay;
 use Mollie\Payment\Service\Mollie\MollieApiClient as MollieApiClientService;
 use Mollie\Payment\Service\PaymentToken\PaymentTokenForOrder;
 use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Integration\ControllerTestCase;
+use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\ResponseInterface;
 
 class WebhookDuplicatePaymentsTest extends ControllerTestCase
 {
@@ -37,7 +35,6 @@ class WebhookDuplicatePaymentsTest extends ControllerTestCase
     private const FAILED_TRANSACTION_ID = 'tr_failedDuplicate';
     private const OPEN_TRANSACTION_ID = 'tr_openOriginal';
     private const CANCELED_DUPLICATE_TRANSACTION_ID = 'tr_canceledDuplicate';
-    private const MAXIMUM_PAYMENT_LOOKUPS = 20;
     private const WEBHOOK_PATH = 'mollie/checkout/webhook';
 
     /**
@@ -52,10 +49,10 @@ class WebhookDuplicatePaymentsTest extends ControllerTestCase
         parent::setUp();
 
         $this->paymentStatuses = [
-            self::PAID_TRANSACTION_ID => PaymentStatus::PAID,
-            self::FAILED_TRANSACTION_ID => PaymentStatus::FAILED,
-            self::OPEN_TRANSACTION_ID => PaymentStatus::OPEN,
-            self::CANCELED_DUPLICATE_TRANSACTION_ID => PaymentStatus::CANCELED,
+            self::PAID_TRANSACTION_ID => PaymentResponseStatus::Paid->value,
+            self::FAILED_TRANSACTION_ID => PaymentResponseStatus::Failed->value,
+            self::OPEN_TRANSACTION_ID => PaymentResponseStatus::Open->value,
+            self::CANCELED_DUPLICATE_TRANSACTION_ID => PaymentResponseStatus::Canceled->value,
         ];
     }
 
@@ -100,10 +97,10 @@ class WebhookDuplicatePaymentsTest extends ControllerTestCase
     {
         $order = $this->preparePendingOrder(self::FAILED_TRANSACTION_ID);
         $this->linkTransaction($order, self::FAILED_TRANSACTION_ID);
-        $this->paymentStatuses[self::FAILED_TRANSACTION_ID] = PaymentStatus::OPEN;
+        $this->paymentStatuses[self::FAILED_TRANSACTION_ID] = PaymentResponseStatus::Open->value;
         $this->dispatchWebhook($this->getWebhookParamsWithOrderIdFallback(self::PAID_TRANSACTION_ID, $order));
         $this->resetRequest();
-        $this->paymentStatuses[self::FAILED_TRANSACTION_ID] = PaymentStatus::FAILED;
+        $this->paymentStatuses[self::FAILED_TRANSACTION_ID] = PaymentResponseStatus::Failed->value;
 
         $this->dispatchWebhook(['id' => self::FAILED_TRANSACTION_ID]);
 
@@ -140,7 +137,7 @@ class WebhookDuplicatePaymentsTest extends ControllerTestCase
             $this->getWebhookParamsWithOrderIdFallback(self::CANCELED_DUPLICATE_TRANSACTION_ID, $order),
         );
         $this->resetRequest();
-        $this->paymentStatuses[self::OPEN_TRANSACTION_ID] = PaymentStatus::EXPIRED;
+        $this->paymentStatuses[self::OPEN_TRANSACTION_ID] = PaymentResponseStatus::Expired->value;
 
         $this->dispatchWebhook(['id' => self::OPEN_TRANSACTION_ID]);
 
@@ -155,13 +152,13 @@ class WebhookDuplicatePaymentsTest extends ControllerTestCase
     {
         $order = $this->preparePendingOrder(self::OPEN_TRANSACTION_ID);
         $this->linkTransaction($order, self::OPEN_TRANSACTION_ID);
-        $this->paymentStatuses[self::CANCELED_DUPLICATE_TRANSACTION_ID] = PaymentStatus::EXPIRED;
+        $this->paymentStatuses[self::CANCELED_DUPLICATE_TRANSACTION_ID] = PaymentResponseStatus::Expired->value;
         $this->dispatchWebhook(
             $this->getWebhookParamsWithOrderIdFallback(self::CANCELED_DUPLICATE_TRANSACTION_ID, $order),
         );
         $this->assertSame(Order::STATE_PENDING_PAYMENT, $this->reloadOrder($order)->getState());
         $this->resetRequest();
-        $this->paymentStatuses[self::OPEN_TRANSACTION_ID] = PaymentStatus::EXPIRED;
+        $this->paymentStatuses[self::OPEN_TRANSACTION_ID] = PaymentResponseStatus::Expired->value;
 
         $this->dispatchWebhook(['id' => self::OPEN_TRANSACTION_ID]);
 
@@ -180,7 +177,7 @@ class WebhookDuplicatePaymentsTest extends ControllerTestCase
         $this->dispatchWebhook(['id' => self::CANCELED_DUPLICATE_TRANSACTION_ID]);
         $this->assertSame(Order::STATE_PENDING_PAYMENT, $this->reloadOrder($order)->getState());
         $this->resetRequest();
-        $this->paymentStatuses[self::OPEN_TRANSACTION_ID] = PaymentStatus::EXPIRED;
+        $this->paymentStatuses[self::OPEN_TRANSACTION_ID] = PaymentResponseStatus::Expired->value;
 
         $this->dispatchWebhook(['id' => self::OPEN_TRANSACTION_ID]);
 
@@ -226,35 +223,28 @@ class WebhookDuplicatePaymentsTest extends ControllerTestCase
         $this->_objectManager->get(CartRepositoryInterface::class)->save($cart);
         $order->setQuoteId((int) $cart->getId());
         $paymentToken = $this->_objectManager->get(PaymentTokenForOrder::class)->execute($order);
-        $respond = fn (PendingRequest $request): MockResponse => $this->createPaymentResponse(
-            $request,
-            $order,
-            $paymentToken,
-        );
-
-        $client = MollieApiClient::fake([
-            GetPaymentRequest::class => new SequenceMockResponse(
-                ...array_fill(0, self::MAXIMUM_PAYMENT_LOOKUPS, $respond),
-            ),
-        ]);
 
         /** @var FakeMollieApiClient $fakeMollieApiClient */
         $fakeMollieApiClient = $this->_objectManager->create(FakeMollieApiClient::class);
-        $fakeMollieApiClient->setInstance($client);
+        $fakeMollieApiClient->fake([
+            'GET /v2/payments/*' => fn (RequestInterface $request): ResponseInterface => $this->createPaymentResponse(
+                $request,
+                $order,
+                $paymentToken,
+            ),
+        ]);
         $this->_objectManager->addSharedInstance($fakeMollieApiClient, MollieApiClientService::class);
     }
 
     private function createPaymentResponse(
-        PendingRequest $request,
+        RequestInterface $request,
         OrderInterface $order,
         string $paymentToken,
-    ): MockResponse {
-        $transactionId = basename($request->getRequest()->resolveResourcePath());
+    ): ResponseInterface {
+        $transactionId = basename($request->getUri()->getPath());
 
-        return MockResponse::ok((string)json_encode([
-            'resource' => 'payment',
+        return MockResponse::payment([
             'id' => $transactionId,
-            'mode' => 'test',
             'status' => $this->paymentStatuses[$transactionId],
             'method' => 'applepay',
             'amount' => [
@@ -266,7 +256,7 @@ class WebhookDuplicatePaymentsTest extends ControllerTestCase
                 'store_id' => $order->getStoreId(),
                 'payment_token' => $paymentToken,
             ],
-        ]));
+        ]);
     }
 
     /**

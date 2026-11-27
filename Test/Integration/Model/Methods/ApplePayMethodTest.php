@@ -8,14 +8,12 @@ declare(strict_types=1);
 
 namespace Mollie\Payment\Test\Integration\Model\Methods;
 
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\PendingRequest;
-use Mollie\Api\Http\Requests\GetEnabledMethodsRequest;
-use Mollie\Api\MollieApiClient;
 use Mollie\Payment\Helper\General;
 use Mollie\Payment\Model\Methods\ApplePay;
 use Mollie\Payment\Model\MollieConfigProvider;
-use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Service\Mollie\ListMethods;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
+use Psr\Http\Message\RequestInterface;
 
 class ApplePayMethodTest extends AbstractTestMethod
 {
@@ -25,27 +23,31 @@ class ApplePayMethodTest extends AbstractTestMethod
 
     public function testTheIncludeWalletsParameterIsUsed(): void
     {
-        $client = MollieApiClient::fake([
-            GetEnabledMethodsRequest::class => function (PendingRequest $request): MockResponse {
-                $this->assertTrue($request->getRequest()->query()->has('includeWallets'));
-                $this->assertEquals('applepay,googlepay', $request->getRequest()->query()->get('includeWallets'));
-
-                return MockResponse::ok('method-list');
-            },
+        $fake = $this->loadFakeMollieApiClient();
+        $fake->fake([
+            'GET /v2/methods' => MockResponse::methodList(),
         ]);
 
         $mollieHelperMock = $this->createMock(General::class);
         $mollieHelperMock->method('getOrderAmountByQuote')->willReturn(['value' => 100, 'currency' => 'EUR']);
-
-        /** @var FakeMollieApiClient $fakeMollieApiClient */
-        $fakeMollieApiClient = $this->objectManager->get(FakeMollieApiClient::class);
-        $fakeMollieApiClient->setInstance($client);
-        $this->objectManager->addSharedInstance($fakeMollieApiClient, \Mollie\Payment\Service\Mollie\MollieApiClient::class);
 
         /** @var MollieConfigProvider $instance */
         $instance = $this->objectManager->create(MollieConfigProvider::class, [
             'mollieHelper' => $mollieHelperMock,
         ]);
         $instance->getActiveMethods();
+
+        $fake->assertSent(
+            'GET /v2/methods',
+            function (RequestInterface $request, array $payload, array $options): bool {
+                $queryString = (string) ($options['query'] ?? $request->getUri()->getQuery());
+                parse_str($queryString, $queryParams);
+
+                $this->assertArrayHasKey('includeWallets', $queryParams);
+                $this->assertEquals(ListMethods::WALLETS, $queryParams['includeWallets']);
+
+                return true;
+            },
+        );
     }
 }

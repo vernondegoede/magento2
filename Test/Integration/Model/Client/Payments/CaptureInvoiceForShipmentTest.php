@@ -15,11 +15,10 @@ use Magento\Sales\Api\InvoiceRepositoryInterface;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Item as OrderItem;
 use Magento\Sales\Model\Order\ShipmentFactory;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\Requests\CreatePaymentCaptureRequest;
 use Mollie\Payment\Exceptions\PartialCaptureNotSupported;
 use Mollie\Payment\Model\Client\Payments\CaptureInvoiceForShipment;
 use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
 
 class CaptureInvoiceForShipmentTest extends IntegrationTestCase
@@ -53,7 +52,7 @@ class CaptureInvoiceForShipmentTest extends IntegrationTestCase
             $this->fail('Expected the partial shipment to be refused');
         } catch (PartialCaptureNotSupported $exception) {
             $this->assertSame(0, $this->countStoredInvoices($order));
-            $fake->loadByStore()->assertSentCount(0);
+            $fake->assertSentCount(0);
         }
     }
 
@@ -70,7 +69,7 @@ class CaptureInvoiceForShipmentTest extends IntegrationTestCase
         $invoice = $instance->execute($this->shipmentFor($order, 2));
 
         $this->assertNotNull($invoice);
-        $fake->loadByStore()->assertSent(CreatePaymentCaptureRequest::class);
+        $fake->assertSent('POST /v2/payments/*/captures');
     }
 
     /**
@@ -86,17 +85,19 @@ class CaptureInvoiceForShipmentTest extends IntegrationTestCase
         $invoice = $instance->execute($this->shipmentFor($order, 1));
 
         $this->assertNotNull($invoice);
-        $fake->loadByStore()->assertSent(CreatePaymentCaptureRequest::class);
+        $fake->assertSent('POST /v2/payments/*/captures');
     }
 
     private function fakeCaptureApi(): FakeMollieApiClient
     {
         $fake = $this->loadFakeMollieApiClient();
         $fake->fake([
-            CreatePaymentCaptureRequest::class => MockResponse::created(
-                '{"resource":"capture","id":"cpt_dummycapture","paymentId":"tr_dummytransaction","status":"pending"}',
-            ),
-        ], true);
+            'POST /v2/payments/*/captures' => MockResponse::capture([
+                'id' => 'cpt_dummycapture',
+                'paymentId' => 'tr_dummytransaction',
+                'status' => 'pending',
+            ]),
+        ]);
 
         return $fake;
     }

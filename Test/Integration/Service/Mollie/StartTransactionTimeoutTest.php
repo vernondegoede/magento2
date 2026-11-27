@@ -13,26 +13,27 @@ use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
+use GuzzleHttp\Promise\Create;
+use GuzzleHttp\Promise\PromiseInterface;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use Magento\Quote\Model\Quote;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
-use Mollie\Api\Exceptions\RetryableNetworkRequestException;
-use Mollie\Api\Http\Adapter\GuzzleMollieHttpAdapter;
-use Mollie\Api\Http\LinearRetryStrategy;
-use Mollie\Api\MollieApiClient;
+use Mollie\Api\Client as MollieClient;
+use Mollie\Api\Models\Components\Security;
+use Mollie\Api\Utils\Retry\RetryConfigBackoff;
 use Mollie\Payment\Helper\General;
 use Mollie\Payment\Logger\MollieLogger;
 use Mollie\Payment\Service\Mollie\StartTransaction;
 use Mollie\Payment\Test\Fakes\Logger\MollieLoggerFake;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
 use Psr\Http\Message\RequestInterface;
 
 class StartTransactionTimeoutTest extends IntegrationTestCase
 {
     private const API_KEY = 'test_dHar4XY7LxsDOtmnkVtjNVWXLSlXsM';
-    private const CLIENT_RETRIES = 5;
     private const CHECKOUT_URL = 'https://www.mollie.com/checkout/select-method/tr_created';
     private const PAYMENTS_ENDPOINT = '/v2/payments';
     private const FIXTURE_QUOTE = 'test01';
@@ -83,14 +84,11 @@ class StartTransactionTimeoutTest extends IntegrationTestCase
     public function testDoesNotCreateAPaymentWithANewIdempotencyKeyWhenEveryClientRetryTimedOut(): void
     {
         $order = $this->givenAMollieOrder();
-        $this->givenMollieRespondsWith([
-            ...$this->timeoutsForEveryClientAttempt(),
-            $this->createdPayment(),
-        ]);
+        $this->givenMollieAlwaysTimesOut(fn (): Response => $this->createdPayment());
 
         $this->assertFailsWithATimeout($order);
 
-        $this->assertCount(self::CLIENT_RETRIES + 1, $this->createPaymentRequests());
+        $this->assertGreaterThan(1, count($this->createPaymentRequests()));
         $this->assertCount(1, $this->distinctIdempotencyKeys());
     }
 
@@ -102,7 +100,7 @@ class StartTransactionTimeoutTest extends IntegrationTestCase
     public function testLogsTheFailedPaymentCreationWhenDebugLoggingIsEnabled(): void
     {
         $order = $this->givenAMollieOrder();
-        $this->givenMollieRespondsWith($this->timeoutsForEveryClientAttempt());
+        $this->givenMollieAlwaysTimesOut();
 
         $this->assertFailsWithATimeout($order);
 
@@ -120,7 +118,7 @@ class StartTransactionTimeoutTest extends IntegrationTestCase
     public function testDoesNotLogTheFailedPaymentCreationWhenDebugLoggingIsDisabled(): void
     {
         $order = $this->givenAMollieOrder();
-        $this->givenMollieRespondsWith($this->timeoutsForEveryClientAttempt());
+        $this->givenMollieAlwaysTimesOut();
 
         $this->assertFailsWithATimeout($order);
 
@@ -131,7 +129,7 @@ class StartTransactionTimeoutTest extends IntegrationTestCase
     {
         try {
             $this->createInstance()->execute($order);
-        } catch (RetryableNetworkRequestException $exception) {
+        } catch (ConnectException $exception) {
             $this->assertStringContainsString('cURL error 28', $exception->getMessage());
 
             return;
@@ -157,19 +155,43 @@ class StartTransactionTimeoutTest extends IntegrationTestCase
 
     private function givenMollieRespondsWith(array $responses): void
     {
-        $stack = HandlerStack::create(new MockHandler($responses));
-        $stack->push(Middleware::history($this->history));
-
-        $client = new MollieApiClient(new GuzzleMollieHttpAdapter(new Client(['handler' => $stack])));
-        $client->setApiKey(self::API_KEY);
-        $client->setRetryStrategy(new LinearRetryStrategy(self::CLIENT_RETRIES, 0));
-
-        $this->loadFakeMollieApiClient()->setInstance($client);
+        $this->givenMollieHandler(new MockHandler($responses));
     }
 
-    private function timeoutsForEveryClientAttempt(): array
+    private function givenMollieAlwaysTimesOut(?callable $onNewIdempotencyKey = null): void
     {
-        return array_map(fn (): ConnectException => $this->timeout(), range(0, self::CLIENT_RETRIES));
+        $firstIdempotencyKey = null;
+
+        $this->givenMollieHandler(function (RequestInterface $request) use (&$firstIdempotencyKey, $onNewIdempotencyKey): PromiseInterface {
+            $idempotencyKey = $request->getHeaderLine('Idempotency-Key');
+            if ($firstIdempotencyKey === null) {
+                $firstIdempotencyKey = $idempotencyKey;
+            } elseif ($onNewIdempotencyKey !== null && $idempotencyKey !== $firstIdempotencyKey) {
+                return Create::promiseFor($onNewIdempotencyKey($request));
+            }
+
+            return Create::rejectionFor($this->timeout());
+        });
+    }
+
+    private function givenMollieHandler(callable $handler): void
+    {
+        $stack = HandlerStack::create($handler);
+        $stack->push(Middleware::history($this->history));
+
+        $client = MollieClient::builder()
+            ->setClient(new Client(['handler' => $stack]))
+            ->setSecurity(new Security(apiKey: self::API_KEY))
+            ->setRetryConfig(new RetryConfigBackoff(
+                initialIntervalMs: 100,
+                maxIntervalMs: 100,
+                exponent: 0,
+                maxElapsedTimeMs: 1000,
+                retryConnectionErrors: true,
+            ))
+            ->build();
+
+        $this->loadFakeMollieApiClient()->setInstance($client);
     }
 
     private function timeout(): ConnectException
@@ -182,10 +204,8 @@ class StartTransactionTimeoutTest extends IntegrationTestCase
 
     private function createdPayment(): Response
     {
-        return new Response(201, ['Content-Type' => 'application/hal+json'], json_encode([
-            'resource' => 'payment',
+        return MockResponse::payment([
             'id' => 'tr_created',
-            'mode' => 'test',
             'status' => 'open',
             'amount' => ['value' => '100.00', 'currency' => 'USD'],
             'description' => 'Order ' . self::FIXTURE_ORDER,
@@ -193,7 +213,7 @@ class StartTransactionTimeoutTest extends IntegrationTestCase
             '_links' => [
                 'checkout' => ['href' => self::CHECKOUT_URL, 'type' => 'text/html'],
             ],
-        ]));
+        ], 201);
     }
 
     private function createPaymentRequests(): array

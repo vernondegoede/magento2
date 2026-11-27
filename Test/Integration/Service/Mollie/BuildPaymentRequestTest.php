@@ -8,7 +8,8 @@ declare(strict_types=1);
 
 namespace Mollie\Payment\Test\Integration\Service\Mollie;
 
-use Mollie\Api\Http\Requests\CreatePaymentRequest;
+use Mollie\Api\Models\Components\PaymentRequest;
+use Mollie\Api\Utils\JSON;
 use Mollie\Payment\Service\Mollie\BuildPaymentRequest;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
 
@@ -25,7 +26,7 @@ class BuildPaymentRequestTest extends IntegrationTestCase
             'billingAddress' => ['email' => 'test@example.com'],
         ]);
 
-        $this->assertInstanceOf(CreatePaymentRequest::class, $result);
+        $this->assertInstanceOf(PaymentRequest::class, $result);
     }
 
     public function testBuildsRequestWhenShippingAddressIsPresent(): void
@@ -40,7 +41,7 @@ class BuildPaymentRequestTest extends IntegrationTestCase
             'shippingAddress' => ['email' => 'test@example.com'],
         ]);
 
-        $this->assertInstanceOf(CreatePaymentRequest::class, $result);
+        $this->assertInstanceOf(PaymentRequest::class, $result);
     }
 
     public function testSendsStoreCredentialsAlongsideCardToken(): void
@@ -56,7 +57,7 @@ class BuildPaymentRequestTest extends IntegrationTestCase
             'additional' => ['cardToken' => 'tkn_abc123', 'storeCredentials' => true],
         ]);
 
-        $body = json_decode((string)$result->payload(), true);
+        $body = json_decode(JSON::createSerializer()->serialize($result, 'json'), true);
         $this->assertSame('tkn_abc123', $body['cardToken']);
         $this->assertTrue($body['storeCredentials']);
     }

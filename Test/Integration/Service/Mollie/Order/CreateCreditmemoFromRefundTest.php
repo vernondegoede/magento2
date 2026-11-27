@@ -23,8 +23,13 @@ use Magento\Sales\Model\Order\Invoice;
 use Magento\Sales\Model\Order\Payment;
 use Magento\Sales\Model\OrderFactory;
 use Magento\Sales\Model\Service\CreditmemoService;
+use Mollie\Api\Models\Components\Amount;
+use Mollie\Api\Models\Components\ListRefundResponse;
+use Mollie\Api\Models\Components\ListRefundResponseLinks;
+use Mollie\Api\Models\Components\ListRefundResponseStatus;
+use Mollie\Api\Models\Components\Mode;
+use Mollie\Api\Models\Components\Url;
 use Mollie\Payment\Service\Mollie\Order\CreateCreditmemoFromRefund;
-use Mollie\Payment\Test\Fakes\Api\Resources\PaymentWithRefundsFake;
 use PHPUnit\Framework\TestCase;
 
 class CreateCreditmemoFromRefundTest extends TestCase
@@ -115,10 +120,10 @@ class CreateCreditmemoFromRefundTest extends TestCase
 
         $instance = new CreateCreditmemoFromRefund($creditmemoLoader, $creditmemoService, $registry);
 
-        $refunds = (new PaymentWithRefundsFake())
-            ->withRefund('re_external_123', 10)
-            ->withRefund('re_external_456', 5)
-            ->refunds();
+        $refunds = [
+            $this->createRefund('re_external_123', 10),
+            $this->createRefund('re_external_456', 5),
+        ];
 
         foreach ($refunds as $refund) {
             $instance->execute($order, $invoice, $refund);
@@ -132,5 +137,29 @@ class CreateCreditmemoFromRefundTest extends TestCase
         $this->assertSame('re_external_456', $refundedCreditmemos[1]->getMollieTransactionId());
         $this->assertSame(['re_external_123', 're_external_456'], $transactionIds);
         $this->assertSame(['re_external_123', 're_external_456'], $lastTransIds);
+    }
+
+    private function createRefund(string $id, float $amount): ListRefundResponse
+    {
+        return new ListRefundResponse(
+            resource: 'refund',
+            id: $id,
+            mode: Mode::Test,
+            description: 'External refund',
+            amount: new Amount(currency: 'EUR', value: number_format($amount, 2, '.', '')),
+            paymentId: 'tr_WDqYK6vllg',
+            status: ListRefundResponseStatus::Refunded,
+            createdAt: '2024-01-01T12:00:00+00:00',
+            links: new ListRefundResponseLinks(
+                self: new Url(
+                    href: 'https://api.mollie.com/v2/payments/tr_WDqYK6vllg/refunds/' . $id,
+                    type: 'application/hal+json',
+                ),
+                payment: new Url(
+                    href: 'https://api.mollie.com/v2/payments/tr_WDqYK6vllg',
+                    type: 'application/hal+json',
+                ),
+            ),
+        );
     }
 }

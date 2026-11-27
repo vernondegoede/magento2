@@ -12,10 +12,12 @@ use Magento\Sales\Api\Data\CreditmemoCommentInterface;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\Data\OrderStatusHistoryInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
+use Mollie\Api\Models\Components\PaymentResponse;
 use Mollie\Payment\Model\Client\Payments\Processors\HandleExternalRefunds;
 use Mollie\Payment\Model\Client\ProcessTransactionResponse;
-use Mollie\Payment\Test\Fakes\Api\Resources\PaymentWithRefundsFake;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
+use Mollie\Payment\Test\Integration\MolliePaymentBuilder;
 
 class HandleExternalRefundsTest extends IntegrationTestCase
 {
@@ -25,9 +27,11 @@ class HandleExternalRefundsTest extends IntegrationTestCase
     public function testCreatesACreditmemoForAnExternalRefundByDefault(): void
     {
         $order = $this->loadPreparedOrder();
-        $payment = (new PaymentWithRefundsFake())->withRefund('re_external_123', 10);
+        $this->fakeRefunds([
+            $this->refundData('re_external_123', 10),
+        ]);
 
-        $this->processRefunds($order, $payment);
+        $this->processRefunds($order, $this->buildPayment());
 
         $freshOrder = $this->loadOrder($order->getIncrementId());
         $this->assertSame(1, $freshOrder->getCreditmemosCollection()->getSize());
@@ -46,11 +50,12 @@ class HandleExternalRefundsTest extends IntegrationTestCase
     public function testCreatesACreditmemoForEachExternalRefundInTheSameCall(): void
     {
         $order = $this->loadPreparedOrder();
-        $payment = (new PaymentWithRefundsFake())
-            ->withRefund('re_external_123', 10)
-            ->withRefund('re_external_456', 5);
+        $this->fakeRefunds([
+            $this->refundData('re_external_123', 10),
+            $this->refundData('re_external_456', 5),
+        ]);
 
-        $this->processRefunds($order, $payment);
+        $this->processRefunds($order, $this->buildPayment());
 
         $this->assertCreditmemoBaseGrandTotals($order, [5.0, 10.0]);
         foreach ($this->loadOrder($order->getIncrementId())->getCreditmemosCollection() as $creditmemo) {
@@ -71,9 +76,11 @@ class HandleExternalRefundsTest extends IntegrationTestCase
     public function testDoesNotCreateTheCreditmemosAgainWhenThePaymentIsProcessedAgain(): void
     {
         $order = $this->loadPreparedOrder();
-        $payment = (new PaymentWithRefundsFake())
-            ->withRefund('re_external_123', 10)
-            ->withRefund('re_external_456', 5);
+        $this->fakeRefunds([
+            $this->refundData('re_external_123', 10),
+            $this->refundData('re_external_456', 5),
+        ]);
+        $payment = $this->buildPayment();
 
         $this->processRefunds($order, $payment);
         $this->processRefunds($this->loadOrder($order->getIncrementId()), $payment);
@@ -88,9 +95,11 @@ class HandleExternalRefundsTest extends IntegrationTestCase
     public function testAddsAnOrderCommentInsteadOfACreditmemoWhenDisabled(): void
     {
         $order = $this->loadPreparedOrder();
-        $payment = (new PaymentWithRefundsFake())->withRefund('re_external_123', 10);
+        $this->fakeRefunds([
+            $this->refundData('re_external_123', 10),
+        ]);
 
-        $this->processRefunds($order, $payment);
+        $this->processRefunds($order, $this->buildPayment());
 
         $freshOrder = $this->loadOrder($order->getIncrementId());
         $this->assertSame(0, $freshOrder->getCreditmemosCollection()->getSize());
@@ -104,7 +113,10 @@ class HandleExternalRefundsTest extends IntegrationTestCase
     public function testAddsTheCommentOnlyOnceWhenThePaymentIsProcessedAgain(): void
     {
         $order = $this->loadPreparedOrder();
-        $payment = (new PaymentWithRefundsFake())->withRefund('re_external_123', 10);
+        $this->fakeRefunds([
+            $this->refundData('re_external_123', 10),
+        ]);
+        $payment = $this->buildPayment();
 
         $this->processRefunds($order, $payment);
         $this->processRefunds($order, $payment);
@@ -120,17 +132,62 @@ class HandleExternalRefundsTest extends IntegrationTestCase
     public function testAddsACommentForEachNewRefund(): void
     {
         $order = $this->loadPreparedOrder();
-        $firstPayment = (new PaymentWithRefundsFake())->withRefund('re_external_123', 10);
-        $secondPayment = (new PaymentWithRefundsFake())
-            ->withRefund('re_external_123', 10)
-            ->withRefund('re_external_456', 5);
+        $fake = $this->loadFakeMollieApiClient();
+        $fake->fake([
+            'GET /v2/payments/*/refunds' => [
+                MockResponse::refundList([
+                    $this->refundData('re_external_123', 10),
+                ]),
+                MockResponse::refundList([
+                    $this->refundData('re_external_123', 10),
+                    $this->refundData('re_external_456', 5),
+                ]),
+            ],
+        ]);
+        $payment = $this->buildPayment();
 
-        $this->processRefunds($order, $firstPayment);
-        $this->processRefunds($order, $secondPayment);
+        $this->processRefunds($order, $payment);
+        $this->processRefunds($order, $payment);
 
         $freshOrder = $this->loadOrder($order->getIncrementId());
         $this->assertCount(1, $this->getCommentsMentioning($freshOrder, 're_external_123'));
         $this->assertCount(1, $this->getCommentsMentioning($freshOrder, 're_external_456'));
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $refunds
+     */
+    private function fakeRefunds(array $refunds): void
+    {
+        $fake = $this->loadFakeMollieApiClient();
+        $fake->fake([
+            'GET /v2/payments/*/refunds' => MockResponse::refundList($refunds),
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function refundData(string $id, float $amount): array
+    {
+        return [
+            'id' => $id,
+            'paymentId' => 'tr_external_refunds',
+            'amount' => [
+                'currency' => 'EUR',
+                'value' => number_format($amount, 2, '.', ''),
+            ],
+        ];
+    }
+
+    private function buildPayment(): PaymentResponse
+    {
+        /** @var MolliePaymentBuilder $builder */
+        $builder = $this->objectManager->create(MolliePaymentBuilder::class);
+        $builder->setId('tr_external_refunds');
+        $builder->setStatus('paid');
+
+        return $builder->build();
     }
 
     private function loadPreparedOrder(): OrderInterface
@@ -145,7 +202,7 @@ class HandleExternalRefundsTest extends IntegrationTestCase
         return $order;
     }
 
-    private function processRefunds(OrderInterface $order, PaymentWithRefundsFake $payment): void
+    private function processRefunds(OrderInterface $order, PaymentResponse $payment): void
     {
         $this->objectManager->create(HandleExternalRefunds::class)->process(
             $order,

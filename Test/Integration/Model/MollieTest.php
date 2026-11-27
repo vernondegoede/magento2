@@ -15,12 +15,7 @@ use Magento\Sales\Api\Data\CreditmemoInterface;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\Data\OrderPaymentInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\Requests\CreatePaymentRefundRequest;
-use Mollie\Api\Http\Requests\DynamicGetRequest;
-use Mollie\Api\Http\Requests\GetPaymentRequest;
-use Mollie\Api\MollieApiClient;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Client;
 use Mollie\Payment\Helper\General;
 use Mollie\Payment\Model\Client\Payments;
 use Mollie\Payment\Model\Methods\Ideal;
@@ -29,8 +24,10 @@ use Mollie\Payment\Model\Mollie;
 use Mollie\Payment\Service\Mollie\StartTransaction;
 use Mollie\Payment\Test\Fakes\Model\Client\Payments\ProcessTransactionFake as PaymentsProcessTransactionFake;
 use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Psr\Http\Message\RequestInterface;
 
 class MollieTest extends IntegrationTestCase
 {
@@ -70,7 +67,7 @@ class MollieTest extends IntegrationTestCase
         $paymentsProcessTransactionFake->disableParentCall();
 
         $mollieApiMock = $this->createMock(\Mollie\Payment\Service\Mollie\MollieApiClient::class);
-        $mollieApiMock->method('loadByStore')->willReturn(new MollieApiClient());
+        $mollieApiMock->method('loadByStore')->willReturn(Client::builder()->build());
 
         /** @var Mollie $instance */
         $instance = $this->objectManager->create(Mollie::class, [
@@ -101,7 +98,7 @@ class MollieTest extends IntegrationTestCase
         $paymentsApiMock->method('startTransaction')->willReturn('payment');
 
         $apiClient = $this->objectManager->create(FakeMollieApiClient::class);
-        $apiClient->setInstance(new MollieApiClient());
+        $apiClient->setInstance(Client::builder()->build());
 
         /** @var StartTransaction $instance */
         $instance = $this->objectManager->create(StartTransaction::class, [
@@ -192,27 +189,15 @@ class MollieTest extends IntegrationTestCase
         $order = $this->loadOrder('100000001');
         $order->setMollieTransactionId('tr_12345');
 
-        $client = MollieApiClient::fake([
-            GetPaymentRequest::class => MockResponse::ok('payment'),
-            CreatePaymentRefundRequest::class => MockResponse::ok('refund'),
+        $fake = $this->loadFakeMollieApiClient();
+        $fake->fake([
+            'POST /v2/payments/*/refunds' => MockResponse::refund(),
         ]);
-
-        $paymentMock = $this->createMock(Payment::class);
-        $paymentMock->method('refund')->with($this->callback(function (array $parameters): bool {
-            $this->assertEquals(56.78, $parameters['amount']['value']);
-
-            return true;
-        }));
-
-        $mollieApiMock = $this->objectManager->create(FakeMollieApiClient::class);
-        $mollieApiMock->setInstance($client);
-
-        $this->objectManager->addSharedInstance($mollieApiMock, \Mollie\Payment\Service\Mollie\MollieApiClient::class);
 
         /** @var Mollie $instance */
         $instance = $this->objectManager->create(Mollie::class);
 
-        /** @var $infoPayment $infoPayment */
+        /** @var \Magento\Sales\Model\Order\Payment $infoPayment */
         $infoPayment = $this->objectManager->get(\Magento\Sales\Model\Order\Payment::class);
         $infoPayment->setOrder($order);
 
@@ -222,6 +207,12 @@ class MollieTest extends IntegrationTestCase
         $infoPayment->setCreditmemo($creditmemo);
 
         $instance->refund($infoPayment, 12.34);
+
+        $fake->assertSent('POST /v2/payments/*/refunds', function (RequestInterface $request, array $payload): bool {
+            $this->assertEquals('56.78', $payload['amount']['value']);
+
+            return true;
+        });
     }
 
     /**
@@ -242,16 +233,11 @@ class MollieTest extends IntegrationTestCase
         $order = $this->loadOrder('100000001');
         $order->setMollieTransactionId('ord_legacy123');
 
-        $client = MollieApiClient::fake([
-            DynamicGetRequest::class => MockResponse::ok($this->legacyOrderWithPaymentsResponse()),
-            GetPaymentRequest::class => MockResponse::ok('payment'),
-            CreatePaymentRefundRequest::class => MockResponse::ok('refund'),
+        $fake = $this->loadFakeMollieApiClient();
+        $fake->fake([
+            'GET /v2/orders/*' => MockResponse::ok($this->legacyOrderWithPaymentsResponse()),
+            'POST /v2/payments/*/refunds' => MockResponse::refund(),
         ]);
-
-        $mollieApiMock = $this->objectManager->create(FakeMollieApiClient::class);
-        $mollieApiMock->setInstance($client);
-
-        $this->objectManager->addSharedInstance($mollieApiMock, \Mollie\Payment\Service\Mollie\MollieApiClient::class);
 
         /** @var Mollie $instance */
         $instance = $this->objectManager->create(Mollie::class);
@@ -289,16 +275,11 @@ class MollieTest extends IntegrationTestCase
         $order = $this->loadOrder('100000001');
         $order->setMollieTransactionId('ord_legacy123');
 
-        $client = MollieApiClient::fake([
-            DynamicGetRequest::class => MockResponse::ok($this->legacyOrderWithPaymentsResponse()),
-            GetPaymentRequest::class => MockResponse::ok('payment'),
-            CreatePaymentRefundRequest::class => MockResponse::ok('refund'),
+        $fake = $this->loadFakeMollieApiClient();
+        $fake->fake([
+            'GET /v2/orders/*' => MockResponse::ok($this->legacyOrderWithPaymentsResponse()),
+            'POST /v2/payments/*/refunds' => MockResponse::refund(),
         ]);
-
-        $mollieApiMock = $this->objectManager->create(FakeMollieApiClient::class);
-        $mollieApiMock->setInstance($client);
-
-        $this->objectManager->addSharedInstance($mollieApiMock, \Mollie\Payment\Service\Mollie\MollieApiClient::class);
 
         /** @var Mollie $instance */
         $instance = $this->objectManager->create(Mollie::class);
@@ -315,15 +296,8 @@ class MollieTest extends IntegrationTestCase
 
         $instance->refund($infoPayment, 25.00);
 
-        $client->assertSent(function ($pendingRequest): bool {
-            if (!$pendingRequest->getRequest() instanceof CreatePaymentRefundRequest) {
-                return false;
-            }
-
-            $amount = $pendingRequest->payload()->get('amount');
-            $value = is_array($amount) ? $amount['value'] : $amount->value;
-
-            $this->assertEquals('25.00', $value);
+        $fake->assertSent('POST /v2/payments/*/refunds', function (RequestInterface $request, array $payload): bool {
+            $this->assertEquals('25.00', $payload['amount']['value']);
 
             return true;
         });

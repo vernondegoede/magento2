@@ -14,9 +14,7 @@ use Magento\Quote\Api\Data\CartInterface;
 use Magento\Sales\Api\Data\OrderStatusHistoryInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\Requests\GetPaymentRequest;
-use Mollie\Api\Types\PaymentStatus;
+use Mollie\Api\Models\Components\PaymentResponseStatus;
 use Mollie\Payment\Api\Data\PaymentTokenInterface;
 use Mollie\Payment\Api\Data\TransactionToOrderInterface;
 use Mollie\Payment\Api\PaymentTokenRepositoryInterface;
@@ -25,6 +23,7 @@ use Mollie\Payment\Service\Magento\GetOrderIdsByTransactionId;
 use Mollie\Payment\Service\Mollie\MollieApiClient;
 use Mollie\Payment\Service\PaymentToken\PaymentTokenForOrder;
 use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 
@@ -63,15 +62,15 @@ class GetOrderIdsByTransactionIdTest extends IntegrationTestCase
         $order = $this->loadOrderById('100000001');
         $orderId = $order->getEntityId();
 
-        $client = \Mollie\Api\MollieApiClient::fake([
-            GetPaymentRequest::class => MockResponse::ok(
-                '{"id":"tr_metadata123","status":"open","metadata":{"order_id":' . $orderId . '}}'
-            ),
-        ]);
-
         /** @var FakeMollieApiClient $fakeMollieApiClient */
         $fakeMollieApiClient = $this->objectManager->create(FakeMollieApiClient::class);
-        $fakeMollieApiClient->setInstance($client);
+        $fakeMollieApiClient->fake([
+            'GET /v2/payments/*' => MockResponse::payment([
+                'id' => 'tr_metadata123',
+                'status' => 'open',
+                'metadata' => ['order_id' => $orderId],
+            ]),
+        ]);
         $this->objectManager->addSharedInstance($fakeMollieApiClient, MollieApiClient::class);
 
         /** @var GetOrderIdsByTransactionId $instance */
@@ -89,15 +88,15 @@ class GetOrderIdsByTransactionIdTest extends IntegrationTestCase
         $order = $this->loadOrderById('100000001');
         $orderId = $order->getEntityId();
 
-        $client = \Mollie\Api\MollieApiClient::fake([
-            GetPaymentRequest::class => MockResponse::ok(
-                '{"id":"tr_link123","status":"open","metadata":{"order_id":' . $orderId . '}}'
-            ),
-        ]);
-
         /** @var FakeMollieApiClient $fakeMollieApiClient */
         $fakeMollieApiClient = $this->objectManager->create(FakeMollieApiClient::class);
-        $fakeMollieApiClient->setInstance($client);
+        $fakeMollieApiClient->fake([
+            'GET /v2/payments/*' => MockResponse::payment([
+                'id' => 'tr_link123',
+                'status' => 'open',
+                'metadata' => ['order_id' => $orderId],
+            ]),
+        ]);
         $this->objectManager->addSharedInstance($fakeMollieApiClient, MollieApiClient::class);
 
         /** @var GetOrderIdsByTransactionId $instance */
@@ -137,15 +136,15 @@ class GetOrderIdsByTransactionIdTest extends IntegrationTestCase
         $concurrent->setEmailSent(1);
         $concurrentRepository->save($concurrent);
 
-        $client = \Mollie\Api\MollieApiClient::fake([
-            GetPaymentRequest::class => MockResponse::ok(
-                '{"id":"tr_concurrent123","status":"open","metadata":{"order_id":' . $orderId . '}}'
-            ),
-        ]);
-
         /** @var FakeMollieApiClient $fakeMollieApiClient */
         $fakeMollieApiClient = $this->objectManager->create(FakeMollieApiClient::class);
-        $fakeMollieApiClient->setInstance($client);
+        $fakeMollieApiClient->fake([
+            'GET /v2/payments/*' => MockResponse::payment([
+                'id' => 'tr_concurrent123',
+                'status' => 'open',
+                'metadata' => ['order_id' => $orderId],
+            ]),
+        ]);
         $this->objectManager->addSharedInstance($fakeMollieApiClient, MollieApiClient::class);
 
         /** @var GetOrderIdsByTransactionId $instance */
@@ -171,15 +170,15 @@ class GetOrderIdsByTransactionIdTest extends IntegrationTestCase
 
     public function testReturnsEmptyArrayWhenNoMatchFound(): void
     {
-        $client = \Mollie\Api\MollieApiClient::fake([
-            GetPaymentRequest::class => MockResponse::ok(
-                '{"id":"tr_nomatch123","status":"open","metadata":{}}'
-            ),
-        ]);
-
         /** @var FakeMollieApiClient $fakeMollieApiClient */
         $fakeMollieApiClient = $this->objectManager->create(FakeMollieApiClient::class);
-        $fakeMollieApiClient->setInstance($client);
+        $fakeMollieApiClient->fake([
+            'GET /v2/payments/*' => MockResponse::payment([
+                'id' => 'tr_nomatch123',
+                'status' => 'open',
+                'metadata' => null,
+            ]),
+        ]);
         $this->objectManager->addSharedInstance($fakeMollieApiClient, MollieApiClient::class);
 
         /** @var GetOrderIdsByTransactionId $instance */
@@ -337,7 +336,7 @@ class GetOrderIdsByTransactionIdTest extends IntegrationTestCase
     public function testLeavesAnExpiredExtraTransactionForTheExpiredProcessorToSkip(): void
     {
         $orderId = $this->prepareOrderWithTransaction(self::EXISTING_TRANSACTION_ID);
-        $this->fakeUnlinkedPayment($orderId, PaymentStatus::EXPIRED);
+        $this->fakeUnlinkedPayment($orderId, PaymentResponseStatus::Expired->value);
 
         $this->objectManager->create(GetOrderIdsByTransactionId::class)->execute(self::UNLINKED_TRANSACTION_ID);
 
@@ -403,8 +402,8 @@ class GetOrderIdsByTransactionIdTest extends IntegrationTestCase
     public static function finalUnsuccessfulStatusDataProvider(): array
     {
         return [
-            PaymentStatus::CANCELED => [PaymentStatus::CANCELED],
-            PaymentStatus::FAILED => [PaymentStatus::FAILED],
+            PaymentResponseStatus::Canceled->value => [PaymentResponseStatus::Canceled->value],
+            PaymentResponseStatus::Failed->value => [PaymentResponseStatus::Failed->value],
         ];
     }
 
@@ -447,7 +446,7 @@ class GetOrderIdsByTransactionIdTest extends IntegrationTestCase
         return (int) $order->getEntityId();
     }
 
-    private function fakeUnlinkedPayment(int $orderId, string $status = PaymentStatus::PAID): void
+    private function fakeUnlinkedPayment(int $orderId, string $status = PaymentResponseStatus::Paid->value): void
     {
         $this->fakeUnlinkedPaymentWithMetadata(
             ['order_id' => $orderId, 'payment_token' => $this->getPaymentTokenOfOrder($orderId)],
@@ -475,19 +474,19 @@ class GetOrderIdsByTransactionIdTest extends IntegrationTestCase
     /**
      * @param array<string, int|string> $metadata
      */
-    private function fakeUnlinkedPaymentWithMetadata(array $metadata, string $status = PaymentStatus::PAID): void
-    {
-        $client = \Mollie\Api\MollieApiClient::fake([
-            GetPaymentRequest::class => MockResponse::ok((string) json_encode([
+    private function fakeUnlinkedPaymentWithMetadata(
+        array $metadata,
+        string $status = PaymentResponseStatus::Paid->value,
+    ): void {
+        /** @var FakeMollieApiClient $fakeMollieApiClient */
+        $fakeMollieApiClient = $this->objectManager->create(FakeMollieApiClient::class);
+        $fakeMollieApiClient->fake([
+            'GET /v2/payments/*' => MockResponse::payment([
                 'id' => self::UNLINKED_TRANSACTION_ID,
                 'status' => $status,
                 'metadata' => $metadata,
-            ])),
+            ]),
         ]);
-
-        /** @var FakeMollieApiClient $fakeMollieApiClient */
-        $fakeMollieApiClient = $this->objectManager->create(FakeMollieApiClient::class);
-        $fakeMollieApiClient->setInstance($client);
         $this->objectManager->addSharedInstance($fakeMollieApiClient, MollieApiClient::class);
     }
 

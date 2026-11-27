@@ -8,82 +8,113 @@ declare(strict_types=1);
 
 namespace Mollie\Payment\Test\Integration;
 
-use Mollie\Api\MollieApiClient;
-use Mollie\Api\Resources\Payment;
-use stdClass;
+use Mollie\Api\Models\Components\Amount;
+use Mollie\Api\Models\Components\MethodResponse;
+use Mollie\Api\Models\Components\Mode;
+use Mollie\Api\Models\Components\PaymentAddress;
+use Mollie\Api\Models\Components\PaymentLineTypeResponse;
+use Mollie\Api\Models\Components\PaymentResponse;
+use Mollie\Api\Models\Components\PaymentResponseBillingAddress;
+use Mollie\Api\Models\Components\PaymentResponseLine;
+use Mollie\Api\Models\Components\PaymentResponseLinks;
+use Mollie\Api\Models\Components\PaymentResponseStatus;
+use Mollie\Api\Models\Components\SequenceTypeResponse;
+use Mollie\Api\Models\Components\Url;
+use Mollie\Payment\Service\Mollie\Express\ExpressPaymentResponseLine;
 
 class ExpressPaymentBuilder
 {
-    public function build(string $transactionId, ?string $streetAdditional = null): Payment
+    public function build(string $transactionId, ?string $streetAdditional = null): PaymentResponse
     {
-        $payment = new Payment(new MollieApiClient());
-        $payment->id = $transactionId;
-        $payment->method = 'applepay';
-        $payment->lines = [$this->productLine(), $this->shippingLine('5.00')];
-        $payment->billingAddress = $this->address($streetAdditional);
-        $payment->shippingAddress = $this->address($streetAdditional);
-        $payment->_links = new stdClass();
-
-        return $payment;
+        return new PaymentResponse(
+            resource: 'payment',
+            id: $transactionId,
+            mode: Mode::Test,
+            description: 'Express Order',
+            amount: new Amount(currency: 'EUR', value: '15.00'),
+            sequenceType: SequenceTypeResponse::Oneoff,
+            profileId: 'pfl_QkEhN94Ba',
+            status: PaymentResponseStatus::Paid,
+            createdAt: '2024-01-01T12:00:00+00:00',
+            links: new PaymentResponseLinks(
+                self: new Url(href: 'https://api.mollie.com/v2/payments/' . $transactionId, type: 'application/hal+json'),
+                dashboard: new Url(href: 'https://www.mollie.com/dashboard/payments/' . $transactionId, type: 'text/html'),
+            ),
+            billingAddress: $this->billingAddress($streetAdditional),
+            shippingAddress: $this->shippingAddress($streetAdditional),
+            lines: [$this->productLine(), $this->shippingLine('5.00')],
+            method: MethodResponse::Applepay,
+        );
     }
 
-    public function address(?string $streetAdditional = null): stdClass
+    public function billingAddress(?string $streetAdditional = null): PaymentResponseBillingAddress
     {
-        $address = new stdClass();
-        $address->givenName = 'John';
-        $address->familyName = 'Doe';
-        $address->streetAndNumber = 'Keizersgracht 126';
-        $address->postalCode = '1015 CW';
-        $address->city = 'Amsterdam';
-        $address->country = 'NL';
-        $address->phone = '0612345678';
-        $address->email = 'aaa@aaa.com';
-
-        if ($streetAdditional !== null) {
-            $address->streetAdditional = $streetAdditional;
-        }
-
-        return $address;
+        return new PaymentResponseBillingAddress(
+            givenName: 'John',
+            familyName: 'Doe',
+            streetAndNumber: 'Keizersgracht 126',
+            streetAdditional: $streetAdditional,
+            postalCode: '1015 CW',
+            email: 'aaa@aaa.com',
+            phone: '0612345678',
+            city: 'Amsterdam',
+            country: 'NL',
+        );
     }
 
-    public function productLine(string $sku = 'simple', string $name = 'Simple Product'): stdClass
+    public function shippingAddress(?string $streetAdditional = null): PaymentAddress
     {
-        $line = new stdClass();
-        $line->type = 'physical';
-        $line->description = '[' . $sku . '] ' . $name;
-        $line->quantity = 1;
-        $line->unitPrice = new stdClass();
-        $line->unitPrice->value = '10.00';
-        $line->totalAmount = new stdClass();
-        $line->totalAmount->value = '10.00';
-
-        return $line;
+        return new PaymentAddress(
+            givenName: 'John',
+            familyName: 'Doe',
+            streetAndNumber: 'Keizersgracht 126',
+            streetAdditional: $streetAdditional,
+            postalCode: '1015 CW',
+            email: 'aaa@aaa.com',
+            phone: '0612345678',
+            city: 'Amsterdam',
+            country: 'NL',
+        );
     }
 
-    public function shippingLine(string $value, ?string $reference = null): stdClass
+    public function address(?string $streetAdditional = null): PaymentAddress
     {
-        $line = new stdClass();
-        $line->type = 'shipping_fee';
-        $line->description = 'Standard delivery';
-        if ($reference !== null) {
-            $line->reference = $reference;
-        }
-        $line->quantity = 1;
-        $line->unitPrice = new stdClass();
-        $line->unitPrice->value = $value;
-        $line->totalAmount = new stdClass();
-        $line->totalAmount->value = $value;
-
-        return $line;
+        return $this->shippingAddress($streetAdditional);
     }
 
-    public function shippingLineWithVat(string $value, string $vatRate, string $vatAmount): stdClass
+    public function productLine(string $sku = 'simple', string $name = 'Simple Product'): PaymentResponseLine
     {
-        $line = $this->shippingLine($value);
-        $line->vatRate = $vatRate;
-        $line->vatAmount = new stdClass();
-        $line->vatAmount->value = $vatAmount;
+        return new PaymentResponseLine(
+            description: '[' . $sku . '] ' . $name,
+            quantity: 1,
+            unitPrice: new Amount(currency: 'EUR', value: '10.00'),
+            totalAmount: new Amount(currency: 'EUR', value: '10.00'),
+            type: PaymentLineTypeResponse::Physical,
+        );
+    }
 
-        return $line;
+    public function shippingLine(string $value, ?string $reference = null): ExpressPaymentResponseLine
+    {
+        return new ExpressPaymentResponseLine(
+            description: 'Standard delivery',
+            quantity: 1,
+            unitPrice: new Amount(currency: 'EUR', value: $value),
+            totalAmount: new Amount(currency: 'EUR', value: $value),
+            type: PaymentLineTypeResponse::ShippingFee,
+            reference: $reference,
+        );
+    }
+
+    public function shippingLineWithVat(string $value, string $vatRate, string $vatAmount): ExpressPaymentResponseLine
+    {
+        return new ExpressPaymentResponseLine(
+            description: 'Standard delivery',
+            quantity: 1,
+            unitPrice: new Amount(currency: 'EUR', value: $value),
+            totalAmount: new Amount(currency: 'EUR', value: $value),
+            type: PaymentLineTypeResponse::ShippingFee,
+            vatRate: $vatRate,
+            vatAmount: new Amount(currency: 'EUR', value: $vatAmount),
+        );
     }
 }

@@ -10,12 +10,9 @@ namespace Mollie\Payment\Test\Integration\Model\Methods;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\Helper\Context;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\Requests\GetEnabledMethodsRequest;
-use Mollie\Api\MollieApiClient;
 use Mollie\Payment\Helper\General as MollieHelper;
 use Mollie\Payment\Model\MollieConfigProvider;
-use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
 use ReflectionClass;
 
@@ -78,14 +75,33 @@ abstract class AbstractTestMethod extends IntegrationTestCase
         $mollieHelperMock = $this->createMock(MollieHelper::class);
         $mollieHelperMock->method('getOrderAmountByQuote')->willReturn(['value' => 100, 'currency' => 'EUR']);
 
-        $client = MollieApiClient::fake([
-            GetEnabledMethodsRequest::class => MockResponse::ok($this->getMethodListResponse()),
+        $fake = $this->loadFakeMollieApiClient();
+        $fake->fake([
+            'GET /v2/methods' => MockResponse::methodList([
+                [
+                    'id' => 'ideal',
+                    'description' => 'iDEAL | Wero',
+                    'image' => [
+                        'size1x' => 'https://mollie.com/external/icons/payment-methods/ideal.png',
+                        'size2x' => 'https://mollie.com/external/icons/payment-methods/ideal%402x.png',
+                        'svg' => 'https://mollie.com/external/icons/payment-methods/ideal.svg',
+                    ],
+                ],
+                [
+                    'id' => $this->code,
+                    'description' => 'Credit card',
+                    'maximumAmount' => [
+                        'value' => '2000.00',
+                        'currency' => 'EUR',
+                    ],
+                    'image' => [
+                        'size1x' => 'https://mollie.com/external/icons/payment-methods/' . $this->code . '.png',
+                        'size2x' => 'https://mollie.com/external/icons/payment-methods/' . $this->code . '%402x.png',
+                        'svg' => 'https://mollie.com/external/icons/payment-methods/' . $this->code . '.svg',
+                    ],
+                ],
+            ]),
         ]);
-
-        /** @var FakeMollieApiClient $fakeMollieApiClient */
-        $fakeMollieApiClient = $this->objectManager->get(FakeMollieApiClient::class);
-        $fakeMollieApiClient->setInstance($client);
-        $this->objectManager->addSharedInstance($fakeMollieApiClient, \Mollie\Payment\Service\Mollie\MollieApiClient::class);
 
         /** @var MollieConfigProvider $instance */
         $instance = $this->objectManager->create(MollieConfigProvider::class, [
@@ -98,65 +114,5 @@ abstract class AbstractTestMethod extends IntegrationTestCase
             'https://mollie.com/external/icons/payment-methods/' . $this->code . '%402x.png',
             $methods['mollie_methods_' . $this->code]['image'],
         );
-    }
-
-    private function getMethodListResponse(): string
-    {
-        return '{
-  "count": 2,
-  "_embedded": {
-    "methods": [
-      {
-        "resource": "method",
-        "id": "ideal",
-        "description": "iDEAL | Wero",
-        "minimumAmount": {
-          "value": "0.01",
-          "currency": "EUR"
-        },
-        "maximumAmount": {
-          "value": "50000.00",
-          "currency": "EUR"
-        },
-        "image": {
-          "size1x": "https://mollie.com/external/icons/payment-methods/ideal.png",
-          "size2x": "https://mollie.com/external/icons/payment-methods/ideal%402x.png",
-          "svg": "https://mollie.com/external/icons/payment-methods/ideal.svg"
-        },
-        "status": "activated"
-      },
-      {
-        "resource": "method",
-        "id": "' . $this->code . '",
-        "description": "Credit card",
-        "minimumAmount": {
-          "value": "0.01",
-          "currency": "EUR"
-        },
-        "maximumAmount": {
-          "value": "2000.00",
-          "currency": "EUR"
-        },
-        "image": {
-          "size1x": "https://mollie.com/external/icons/payment-methods/' . $this->code . '.png",
-          "size2x": "https://mollie.com/external/icons/payment-methods/' . $this->code . '%402x.png",
-          "svg": "https://mollie.com/external/icons/payment-methods/' . $this->code . '.svg"
-        },
-        "status": "activated"
-      }
-    ]
-  },
-  "_links": {
-    "self": {
-      "href": "...",
-      "type": "application/hal+json"
-    },
-    "documentation": {
-      "href": "...",
-      "type": "text/html"
-    }
-  }
-}
-';
     }
 }

@@ -13,16 +13,13 @@ use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Api\CartTotalRepositoryInterface;
 use Magento\Quote\Api\Data\CartInterface;
 use Magento\TestFramework\Quote\Model\GetQuoteByReservedOrderId;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\Data\Money;
-use Mollie\Api\Http\PendingRequest;
-use Mollie\Api\MollieApiClient;
 use Mollie\Payment\Exceptions\CustomerDetailsRequired;
-use Mollie\Payment\Service\Mollie\Api\CreateSessionRequest;
 use Mollie\Payment\Service\Mollie\CreateSession;
-use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\FakeHttpClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Psr\Http\Message\RequestInterface;
 
 /**
  * @magentoAppArea frontend
@@ -40,8 +37,8 @@ class CreateSessionTest extends IntegrationTestCase
         $instance = $this->objectManager->create(CreateSession::class);
         $instance->execute($this->loadQuote(), false);
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            $lines = $this->extractLines($request);
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $payload): bool {
+            $lines = $payload['lines'] ?? [];
 
             foreach ($lines as $line) {
                 $this->assertArrayHasKey('type', $line);
@@ -66,8 +63,8 @@ class CreateSessionTest extends IntegrationTestCase
         $instance = $this->objectManager->create(CreateSession::class);
         $instance->execute($this->loadQuote(), true);
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            $lines = $this->extractLines($request);
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $payload): bool {
+            $lines = $payload['lines'] ?? [];
 
             $this->assertNotEmpty($lines);
             foreach ($lines as $line) {
@@ -99,8 +96,8 @@ class CreateSessionTest extends IntegrationTestCase
         $instance = $this->objectManager->create(CreateSession::class);
         $instance->execute($cart, false);
 
-        $client->assertSent(function (PendingRequest $request) use ($grandTotal): bool {
-            $this->assertSame(number_format($grandTotal, 2, '.', ''), $this->extractAmount($request)['value']);
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $payload) use ($grandTotal): bool {
+            $this->assertSame(number_format($grandTotal, 2, '.', ''), $payload['amount']['value']);
 
             return true;
         });
@@ -122,8 +119,8 @@ class CreateSessionTest extends IntegrationTestCase
         $instance = $this->objectManager->create(CreateSession::class);
         $instance->execute($cart, true);
 
-        $client->assertSent(function (PendingRequest $request) use ($subtotal): bool {
-            $this->assertSame(number_format($subtotal, 2, '.', ''), $this->extractAmount($request)['value']);
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $payload) use ($subtotal): bool {
+            $this->assertSame(number_format($subtotal, 2, '.', ''), $payload['amount']['value']);
 
             return true;
         });
@@ -143,8 +140,8 @@ class CreateSessionTest extends IntegrationTestCase
         $instance = $this->objectManager->create(CreateSession::class);
         $instance->execute($cart, true);
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            $this->assertContains('email', $this->extractField($request, 'requiredCustomerDetails'));
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $payload): bool {
+            $this->assertContains('email', $payload['requiredCustomerDetails'] ?? []);
 
             return true;
         });
@@ -163,8 +160,8 @@ class CreateSessionTest extends IntegrationTestCase
         $instance = $this->objectManager->create(CreateSession::class);
         $instance->execute($cart, true);
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            $this->assertNotContains('email', $this->extractField($request, 'requiredCustomerDetails') ?? []);
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $payload): bool {
+            $this->assertNotContains('email', $payload['requiredCustomerDetails'] ?? []);
 
             return true;
         });
@@ -184,8 +181,8 @@ class CreateSessionTest extends IntegrationTestCase
         $instance = $this->objectManager->create(CreateSession::class);
         $instance->execute($cart, false);
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            $this->assertNull($this->extractField($request, 'requiredCustomerDetails'));
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $payload): bool {
+            $this->assertNull($payload['requiredCustomerDetails'] ?? null);
 
             return true;
         });
@@ -209,10 +206,10 @@ class CreateSessionTest extends IntegrationTestCase
         $instance = $this->objectManager->create(CreateSession::class);
         $instance->execute($cart, true);
 
-        $client->assertSent(function (PendingRequest $request): bool {
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $payload): bool {
             $this->assertSame(
                 ['billing-address', 'shipping-address'],
-                $this->extractField($request, 'requiredCustomerDetails'),
+                $payload['requiredCustomerDetails'] ?? null,
             );
 
             return true;
@@ -234,13 +231,13 @@ class CreateSessionTest extends IntegrationTestCase
         $instance = $this->objectManager->create(CreateSession::class);
         $instance->execute($cart, true);
 
-        $client->assertSent(function (PendingRequest $request) use ($cart): bool {
-            $shipping = $this->extractField($request, 'shipping');
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $payload) use ($cart): bool {
+            $shipping = $payload['shipping'] ?? null;
 
             $this->assertIsArray($shipping);
             $this->assertStringContainsString('mollie/express/shippingOptions', $shipping['callbackUrl']);
             $this->assertStringContainsString('quoteId=' . $cart->getId(), $shipping['callbackUrl']);
-            $this->assertContains('shipping-address', $this->extractField($request, 'requiredCustomerDetails'));
+            $this->assertContains('shipping-address', $payload['requiredCustomerDetails'] ?? []);
 
             return true;
         });
@@ -263,10 +260,10 @@ class CreateSessionTest extends IntegrationTestCase
         $instance = $this->objectManager->create(CreateSession::class);
         $instance->execute($cart, true);
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            $this->assertNull($this->extractField($request, 'shipping'));
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $payload): bool {
+            $this->assertNull($payload['shipping'] ?? null);
             $this->assertNull(
-                $this->extractField($request, 'requiredCustomerDetails'),
+                $payload['requiredCustomerDetails'] ?? null,
                 'A cart with an email and addresses must not ask Mollie for customer details without the beta',
             );
 
@@ -288,8 +285,8 @@ class CreateSessionTest extends IntegrationTestCase
         $instance = $this->objectManager->create(CreateSession::class);
         $instance->execute($this->loadQuote(), false);
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            $this->assertNull($this->extractField($request, 'shipping'));
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $payload): bool {
+            $this->assertNull($payload['shipping'] ?? null);
 
             return true;
         });
@@ -308,11 +305,11 @@ class CreateSessionTest extends IntegrationTestCase
         $instance = $this->objectManager->create(CreateSession::class);
         $instance->execute($cart, true);
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            $this->assertNull($this->extractField($request, 'shipping'));
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $payload): bool {
+            $this->assertNull($payload['shipping'] ?? null);
             $this->assertNotContains(
                 'shipping-address',
-                $this->extractField($request, 'requiredCustomerDetails') ?? [],
+                $payload['requiredCustomerDetails'] ?? [],
             );
 
             return true;
@@ -336,8 +333,8 @@ class CreateSessionTest extends IntegrationTestCase
         $instance = $this->objectManager->create(CreateSession::class);
         $instance->execute($this->loadQuote(), true);
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            $this->assertNull($this->extractField($request, 'shipping'));
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $payload): bool {
+            $this->assertNull($payload['shipping'] ?? null);
 
             return true;
         });
@@ -388,16 +385,16 @@ class CreateSessionTest extends IntegrationTestCase
         $instance = $this->objectManager->create(CreateSession::class);
         $instance->execute($cart, true);
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            $this->assertSame('Green str, 67', $this->extractField($request, 'billingAddress')['streetAndNumber']);
-            $this->assertSame('Green str, 67', $this->extractField($request, 'shippingAddress')['streetAndNumber']);
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $payload): bool {
+            $this->assertSame('Green str, 67', $payload['billingAddress']['streetAndNumber']);
+            $this->assertSame('Green str, 67', $payload['shippingAddress']['streetAndNumber']);
             $this->assertSame(
                 '+13468676',
-                $this->extractField($request, 'billingAddress')['phone'],
+                $payload['billingAddress']['phone'],
                 'The phone number must be sent in the international E.164 format',
             );
             $this->assertNull(
-                $this->extractField($request, 'requiredCustomerDetails'),
+                $payload['requiredCustomerDetails'] ?? null,
                 'With both addresses prefilled Mollie has nothing left to collect',
             );
 
@@ -422,10 +419,10 @@ class CreateSessionTest extends IntegrationTestCase
         $instance = $this->objectManager->create(CreateSession::class);
         $instance->execute($cart, true);
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            $this->assertNull($this->extractField($request, 'shippingAddress'));
-            $this->assertNotNull($this->extractField($request, 'billingAddress'));
-            $this->assertSame(['shipping-address'], $this->extractField($request, 'requiredCustomerDetails'));
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $payload): bool {
+            $this->assertNull($payload['shippingAddress'] ?? null);
+            $this->assertNotNull($payload['billingAddress'] ?? null);
+            $this->assertSame(['shipping-address'], $payload['requiredCustomerDetails'] ?? null);
 
             return true;
         });
@@ -448,9 +445,9 @@ class CreateSessionTest extends IntegrationTestCase
         $instance = $this->objectManager->create(CreateSession::class);
         $instance->execute($cart, true);
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            $this->assertSame('Quote street 1', $this->extractField($request, 'billingAddress')['streetAndNumber']);
-            $this->assertSame('+31612345678', $this->extractField($request, 'billingAddress')['phone']);
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $payload): bool {
+            $this->assertSame('Quote street 1', $payload['billingAddress']['streetAndNumber']);
+            $this->assertSame('+31612345678', $payload['billingAddress']['phone']);
 
             return true;
         });
@@ -485,9 +482,9 @@ class CreateSessionTest extends IntegrationTestCase
         $instance = $this->objectManager->create(CreateSession::class);
         $instance->execute($cart, true);
 
-        $client->assertSent(function (PendingRequest $request): bool {
-            $lines = $this->extractLines($request);
-            $amount = $this->extractAmount($request);
+        $client->assertSent('POST /v2/sessions', function (RequestInterface $request, array $payload): bool {
+            $lines = $payload['lines'] ?? [];
+            $amount = $payload['amount'] ?? [];
 
             $this->assertSame(
                 $amount['value'],
@@ -530,56 +527,11 @@ class CreateSessionTest extends IntegrationTestCase
         ));
     }
 
-    private function fakeSessionRequest(): MollieApiClient
+    private function fakeSessionRequest(): FakeHttpClient
     {
-        $client = MollieApiClient::fake([
-            CreateSessionRequest::class => MockResponse::ok('session'),
-        ], true);
-
-        /** @var FakeMollieApiClient $fake */
-        $fake = $this->objectManager->create(FakeMollieApiClient::class);
-        $fake->setInstance($client);
-        $this->objectManager->addSharedInstance($fake, \Mollie\Payment\Service\Mollie\MollieApiClient::class);
-
-        return $client;
-    }
-
-    private function extractLines(PendingRequest $request): array
-    {
-        $payload = $request->payload();
-        if ($payload !== null) {
-            return $payload->all()['lines'] ?? [];
-        }
-
-        $body = json_decode((string)$request->createPsrRequest()->getBody(), true);
-
-        return $body['lines'] ?? [];
-    }
-
-    private function extractField(PendingRequest $request, string $field): mixed
-    {
-        $payload = $request->payload();
-        if ($payload !== null) {
-            return $payload->all()[$field] ?? null;
-        }
-
-        $body = json_decode((string)$request->createPsrRequest()->getBody(), true);
-
-        return $body[$field] ?? null;
-    }
-
-    private function extractAmount(PendingRequest $request): array
-    {
-        $payload = $request->payload();
-        if ($payload !== null) {
-            $amount = $payload->all()['amount'] ?? null;
-
-            return $amount instanceof Money ? $amount->toArray() : (array)$amount;
-        }
-
-        $body = json_decode((string)$request->createPsrRequest()->getBody(), true);
-
-        return $body['amount'] ?? [];
+        return $this->loadFakeMollieApiClient()->fake([
+            'POST /v2/sessions' => MockResponse::session([], 201),
+        ]);
     }
 
     private function loadQuote(): CartInterface

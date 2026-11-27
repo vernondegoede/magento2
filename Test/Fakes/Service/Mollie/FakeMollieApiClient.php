@@ -8,27 +8,22 @@ declare(strict_types=1);
 
 namespace Mollie\Payment\Test\Fakes\Service\Mollie;
 
+use Mollie\Api\Client;
+use Mollie\Api\Models\Components\Security;
 use Mollie\Payment\Service\Mollie\MollieApiClient;
 
 class FakeMollieApiClient extends MollieApiClient
 {
-    private bool $disableApiCall = true;
+    private ?Client $instance = null;
 
-    private ?\Mollie\Api\MollieApiClient $instance = null;
+    private ?FakeHttpClient $fakeHttpClient = null;
 
-    public function setInstance(\Mollie\Api\MollieApiClient $instance): void
+    public function setInstance(Client $instance): void
     {
         $this->instance = $instance;
     }
 
-    private function loadInstance(): void
-    {
-        if (!$this->instance) {
-            $this->instance = parent::loadByStore();
-        }
-    }
-
-    public function loadByStore(?int $storeId = null): \Mollie\Api\MollieApiClient
+    public function loadByStore(?int $storeId = null): Client
     {
         if ($this->instance) {
             return $this->instance;
@@ -37,7 +32,7 @@ class FakeMollieApiClient extends MollieApiClient
         return parent::loadByStore($storeId);
     }
 
-    public function loadByApiKey(string $apiKey): \Mollie\Api\MollieApiClient
+    public function loadByApiKey(string $apiKey): Client
     {
         if ($this->instance) {
             return $this->instance;
@@ -46,8 +41,37 @@ class FakeMollieApiClient extends MollieApiClient
         return parent::loadByApiKey($apiKey);
     }
 
-    public function fake(array $expectedResponses = [], bool $retainRequests = false): void
+    /**
+     * @param array<int|string, mixed> $expectedResponses
+     */
+    public function fake(array $expectedResponses = []): FakeHttpClient
     {
-        $this->instance = \Mollie\Api\MollieApiClient::fake($expectedResponses, $retainRequests);
+        $this->fakeHttpClient = new FakeHttpClient($expectedResponses);
+        $this->instance = Client::builder()
+            ->setClient($this->fakeHttpClient)
+            ->setSecurity(new Security(apiKey: 'test_dHar4XY7LxsDOtmnkVtjNVWXLSlXsM'))
+            ->build();
+
+        return $this->fakeHttpClient;
+    }
+
+    public function getFakeHttpClient(): ?FakeHttpClient
+    {
+        return $this->fakeHttpClient;
+    }
+
+    public function assertSent(string $pattern, ?callable $callback = null): void
+    {
+        $this->fakeHttpClient?->assertSent($pattern, $callback);
+    }
+
+    public function assertSentCount(int $count, ?string $pattern = null): void
+    {
+        $this->fakeHttpClient?->assertSentCount($count, $pattern);
+    }
+
+    public function assertNothingSent(): void
+    {
+        $this->fakeHttpClient?->assertNothingSent();
     }
 }

@@ -13,13 +13,12 @@ use Magento\Sales\Api\Data\InvoiceInterface;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order\Invoice;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\PendingRequest;
-use Mollie\Api\Http\Requests\CreatePaymentCaptureRequest;
 use Mollie\Payment\Exceptions\PartialCaptureNotSupported;
 use Mollie\Payment\Model\Client\Payments\CapturePaymentForInvoice;
 use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
+use Psr\Http\Message\RequestInterface;
 
 class CapturePaymentForInvoiceTest extends IntegrationTestCase
 {
@@ -49,7 +48,7 @@ class CapturePaymentForInvoiceTest extends IntegrationTestCase
             $instance->execute($this->prepareInvoice('mollie_methods_riverty', 44.0));
             $this->fail('Expected the partial invoice to be refused');
         } catch (PartialCaptureNotSupported $exception) {
-            $fake->loadByStore()->assertSentCount(0);
+            $fake->assertSentCount(0);
         }
     }
 
@@ -63,7 +62,7 @@ class CapturePaymentForInvoiceTest extends IntegrationTestCase
         $instance = $this->objectManager->create(CapturePaymentForInvoice::class);
         $instance->execute($this->prepareInvoice('mollie_methods_riverty', 100.0));
 
-        $fake->loadByStore()->assertSent(CreatePaymentCaptureRequest::class);
+        $fake->assertSent('POST /v2/payments/*/captures');
     }
 
     /**
@@ -76,7 +75,7 @@ class CapturePaymentForInvoiceTest extends IntegrationTestCase
         $instance = $this->objectManager->create(CapturePaymentForInvoice::class);
         $instance->execute($this->prepareInvoice('mollie_methods_creditcard', 44.0));
 
-        $fake->loadByStore()->assertSent(CreatePaymentCaptureRequest::class);
+        $fake->assertSent('POST /v2/payments/*/captures');
     }
 
     /**
@@ -133,18 +132,17 @@ class CapturePaymentForInvoiceTest extends IntegrationTestCase
      */
     private function getSentCapturePayload(FakeMollieApiClient $fake): array
     {
-        $payload = [];
-        $fake->loadByStore()->assertSent(function (PendingRequest $request) use (&$payload): bool {
-            if (!$request->getRequest() instanceof CreatePaymentCaptureRequest) {
-                return false;
-            }
+        $capturedPayload = [];
+        $fake->assertSent(
+            'POST /v2/payments/*/captures',
+            static function (RequestInterface $request, array $payload) use (&$capturedPayload): bool {
+                $capturedPayload = $payload;
 
-            $payload = json_decode((string) $request->createPsrRequest()->getBody(), true);
+                return true;
+            },
+        );
 
-            return true;
-        });
-
-        return $payload;
+        return $capturedPayload;
     }
 
     private function saveWithTransaction(string $incrementId, string $transactionId): OrderInterface
@@ -171,10 +169,12 @@ class CapturePaymentForInvoiceTest extends IntegrationTestCase
     {
         $fake = $this->loadFakeMollieApiClient();
         $fake->fake([
-            CreatePaymentCaptureRequest::class => MockResponse::created(
-                '{"resource":"capture","id":"cpt_dummycapture","paymentId":"tr_dummytransaction","status":"pending"}',
-            ),
-        ], true);
+            'POST /v2/payments/*/captures' => MockResponse::capture([
+                'id' => 'cpt_dummycapture',
+                'paymentId' => 'tr_dummytransaction',
+                'status' => 'pending',
+            ]),
+        ]);
 
         return $fake;
     }

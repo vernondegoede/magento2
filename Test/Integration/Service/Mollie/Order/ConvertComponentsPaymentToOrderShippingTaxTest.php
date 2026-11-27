@@ -17,7 +17,7 @@ use Magento\Tax\Api\TaxRateRepositoryInterface;
 use Magento\Tax\Api\TaxRuleRepositoryInterface;
 use Magento\TestFramework\Helper\Bootstrap;
 use Magento\TestFramework\Quote\Model\GetQuoteByReservedOrderId;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Models\Components\PaymentResponse;
 use Mollie\Payment\Service\Mollie\Order\ConvertComponentsPaymentToOrder;
 use Mollie\Payment\Service\PaymentToken\PaymentTokenForQuote;
 use Mollie\Payment\Test\Integration\ExpressPaymentBuilder;
@@ -154,7 +154,7 @@ class ConvertComponentsPaymentToOrderShippingTaxTest extends IntegrationTestCase
         return $cart;
     }
 
-    private function buildPaymentWithShippingVat(): Payment
+    private function buildPaymentWithShippingVat(): PaymentResponse
     {
         $builder = $this->objectManager->get(ExpressPaymentBuilder::class);
         $payment = $builder->build('tr_expressshippingvat');
@@ -170,7 +170,7 @@ class ConvertComponentsPaymentToOrderShippingTaxTest extends IntegrationTestCase
         return $payment;
     }
 
-    private function buildPaymentWithoutShippingVat(): Payment
+    private function buildPaymentWithoutShippingVat(): PaymentResponse
     {
         $builder = $this->objectManager->get(ExpressPaymentBuilder::class);
         $payment = $builder->build('tr_expressshippingnovat');
@@ -179,7 +179,7 @@ class ConvertComponentsPaymentToOrderShippingTaxTest extends IntegrationTestCase
         return $payment;
     }
 
-    private function convert(CartInterface $baseCart, Payment $payment): OrderInterface
+    private function convert(CartInterface $baseCart, PaymentResponse $payment): OrderInterface
     {
         $this->objectManager->get(PaymentTokenForQuote::class)->execute($baseCart);
 

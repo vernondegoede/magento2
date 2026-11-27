@@ -11,7 +11,7 @@ namespace Mollie\Payment\Test\Integration\Cron;
 use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Magento\Sales\Model\Order;
-use Mollie\Api\Types\PaymentStatus;
+use Mollie\Api\Models\Components\PaymentResponseStatus;
 use Mollie\Payment\Cron\ProcessPendingOrders;
 use Mollie\Payment\Model\Client\ProcessTransactionResponse;
 use Mollie\Payment\Model\Methods\Paymentlink;
@@ -84,7 +84,7 @@ class ProcessPendingOrdersTest extends IntegrationTestCase
     {
         $this->preparePaymentLinkOrder();
 
-        $this->runCron(PaymentStatus::EXPIRED);
+        $this->runCron(PaymentResponseStatus::Expired->value);
 
         $this->assertSame([], $this->getLoggedErrors());
     }
@@ -98,7 +98,7 @@ class ProcessPendingOrdersTest extends IntegrationTestCase
     {
         $this->preparePaymentLinkOrder();
 
-        $this->runCron(PaymentStatus::EXPIRED);
+        $this->runCron(PaymentResponseStatus::Expired->value);
 
         $this->assertCount(1, $this->getLoggedErrors());
     }
@@ -125,7 +125,7 @@ class ProcessPendingOrdersTest extends IntegrationTestCase
     /**
      * @return int[]
      */
-    private function runCron(string $status = PaymentStatus::PAID): array
+    private function runCron(string $status = PaymentResponseStatus::Paid->value): array
     {
         $processedOrderIds = [];
 
@@ -139,7 +139,7 @@ class ProcessPendingOrdersTest extends IntegrationTestCase
                 $this->processedOrderIds[] = (int) $orderId;
 
                 return new ProcessTransactionResponse(
-                    $this->status === PaymentStatus::PAID,
+                    $this->status === PaymentResponseStatus::Paid->value,
                     $this->status,
                     (string) $orderId,
                     $type,

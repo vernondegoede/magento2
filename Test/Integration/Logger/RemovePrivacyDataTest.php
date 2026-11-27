@@ -8,11 +8,11 @@ declare(strict_types=1);
 
 namespace Mollie\Payment\Test\Integration\Logger;
 
-use Mollie\Api\Fake\MockMollieClient;
-use Mollie\Api\Resources\Payment;
+use Mollie\Api\Models\Components\PaymentAddress;
+use Mollie\Api\Models\Components\PaymentResponseBillingAddress;
 use Mollie\Payment\Logger\RemovePrivacyData;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
-use stdClass;
+use Mollie\Payment\Test\Integration\MolliePaymentBuilder;
 
 class RemovePrivacyDataTest extends IntegrationTestCase
 {
@@ -82,9 +82,9 @@ class RemovePrivacyDataTest extends IntegrationTestCase
 
     public function testRemovesDataFromThePaymentObject(): void
     {
-        $payment = new Payment(new MockMollieClient);
-        $payment->billingAddress = $this->getAddress();
-        $payment->shippingAddress = $this->getAddress();
+        $payment = (new MolliePaymentBuilder())->build();
+        $payment->billingAddress = $this->getBillingAddress();
+        $payment->shippingAddress = $this->getShippingAddress();
 
         $instance = $this->objectManager->create(RemovePrivacyData::class);
 
@@ -101,11 +101,11 @@ class RemovePrivacyDataTest extends IntegrationTestCase
         $this->assertStringNotContainsString('+3112345678', $result);
     }
 
-    public function testDoesNotAlterExistingObject()
+    public function testDoesNotAlterExistingObject(): void
     {
-        $original = new Payment(new MockMollieClient);
-        $original->billingAddress = $this->getAddress();
-        $original->shippingAddress = $this->getAddress();
+        $original = (new MolliePaymentBuilder())->build();
+        $original->billingAddress = $this->getBillingAddress();
+        $original->shippingAddress = $this->getShippingAddress();
 
         $instance = $this->objectManager->create(RemovePrivacyData::class);
         $result = $instance->execute($original);
@@ -114,19 +114,34 @@ class RemovePrivacyDataTest extends IntegrationTestCase
         $this->assertEquals($original->billingAddress->familyName, 'Jansens');
     }
 
-    private function getAddress(): stdClass
+    private function getBillingAddress(): PaymentResponseBillingAddress
     {
-        $address = new stdClass();
-        $address->givenName = 'Jan';
-        $address->familyName = 'Jansens';
-        $address->street = 'Vinex straat';
-        $address->postalCode = '1234AB';
-        $address->city = 'Vinex wijk';
-        $address->country = 'NL';
-        $address->email = 'jan@jansensbv.nl';
-        $address->phone = '+3112345678';
+        return new PaymentResponseBillingAddress(
+            givenName: 'Jan',
+            familyName: 'Jansens',
+            organizationName: 'Jansens BV',
+            streetAndNumber: 'Vinex straat',
+            postalCode: '1234AB',
+            email: 'jan@jansensbv.nl',
+            phone: '+3112345678',
+            city: 'Vinex wijk',
+            country: 'NL',
+        );
+    }
 
-        return $address;
+    private function getShippingAddress(): PaymentAddress
+    {
+        return new PaymentAddress(
+            givenName: 'Jan',
+            familyName: 'Jansens',
+            organizationName: 'Jansens BV',
+            streetAndNumber: 'Vinex straat',
+            postalCode: '1234AB',
+            email: 'jan@jansensbv.nl',
+            phone: '+3112345678',
+            city: 'Vinex wijk',
+            country: 'NL',
+        );
     }
 
 }

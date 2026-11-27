@@ -9,15 +9,11 @@ declare(strict_types=1);
 
 namespace Mollie\Payment\Test\Integration\Service\Mollie\Order;
 
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Fake\SequenceMockResponse;
-use Mollie\Api\Http\Requests\GetPaymentRequest;
 use Mollie\Payment\Api\Data\TransactionToOrderInterface;
 use Mollie\Payment\Api\TransactionToOrderRepositoryInterface;
-use Mollie\Payment\Service\Mollie\MollieApiClient;
 use Mollie\Payment\Service\Mollie\Order\GetTransactionId;
 use Mollie\Payment\Service\Order\ExpiredOrderToTransaction;
-use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 
@@ -68,18 +64,14 @@ class GetTransactionIdTest extends IntegrationTestCase
 
         $responses = [];
         foreach ($transactions as $transaction) {
-            $this->addMollieTransactionToOrder((int) $order->getId(), $transaction[0], $transaction[1]);
-            $responses[] = MockResponse::ok('{"id":"' . $transaction[0] . '","status":"' . $transaction[1] . '"}');
+            $this->addMollieTransactionToOrder((int) $order->getId(), $transaction[0]);
+            $responses['GET /v2/payments/' . $transaction[0]] = MockResponse::payment([
+                'id' => $transaction[0],
+                'status' => $transaction[1],
+            ]);
         }
 
-        $client = \Mollie\Api\MollieApiClient::fake([
-            GetPaymentRequest::class => new SequenceMockResponse(...$responses),
-        ]);
-        /** @var FakeMollieApiClient $fakeMollieApiClient */
-        $fakeMollieApiClient = $this->objectManager->create(FakeMollieApiClient::class);
-        $fakeMollieApiClient->setInstance($client);
-
-        $this->objectManager->addSharedInstance($fakeMollieApiClient, MollieApiClient::class);
+        $this->loadFakeMollieApiClient()->fake($responses);
 
         $instance = $this->objectManager->create(GetTransactionId::class);
         $instance->forOrder($order);
@@ -102,17 +94,10 @@ class GetTransactionIdTest extends IntegrationTestCase
         $this->addMollieTransactionToOrder((int) $order->getId(), 'tr_abc123');
         $this->addMollieTransactionToOrder((int) $order->getId(), 'tr_def456');
 
-        $client = \Mollie\Api\MollieApiClient::fake([
-            GetPaymentRequest::class => new SequenceMockResponse(
-                MockResponse::ok('{"id":"tr_abc13","status":"pending"}'),
-                MockResponse::ok('{"id":"tr_def456","status":"pending"}'),
-            ),
+        $this->loadFakeMollieApiClient()->fake([
+            'GET /v2/payments/tr_abc123' => MockResponse::payment(['id' => 'tr_abc123', 'status' => 'pending']),
+            'GET /v2/payments/tr_def456' => MockResponse::payment(['id' => 'tr_def456', 'status' => 'pending']),
         ]);
-
-        /** @var FakeMollieApiClient $fakeMollieApiClient */
-        $fakeMollieApiClient = $this->objectManager->create(FakeMollieApiClient::class);
-        $fakeMollieApiClient->setInstance($client);
-        $this->objectManager->addSharedInstance($fakeMollieApiClient, MollieApiClient::class);
 
         $instance = $this->objectManager->create(GetTransactionId::class);
         $instance->forOrder($order);
@@ -218,22 +203,15 @@ class GetTransactionIdTest extends IntegrationTestCase
      */
     private function fakeTransactionStatuses(array $statuses): void
     {
-        $responses = array_map(
-            fn (string $id, string $status): MockResponse => MockResponse::ok(
-                '{"id":"' . $id . '","status":"' . $status . '"}'
-            ),
-            array_keys($statuses),
-            array_values($statuses),
-        );
+        $responses = [];
+        foreach ($statuses as $id => $status) {
+            $responses['GET /v2/payments/' . $id] = MockResponse::payment([
+                'id' => $id,
+                'status' => $status,
+            ]);
+        }
 
-        $client = \Mollie\Api\MollieApiClient::fake([
-            GetPaymentRequest::class => new SequenceMockResponse(...$responses),
-        ]);
-
-        /** @var FakeMollieApiClient $fakeMollieApiClient */
-        $fakeMollieApiClient = $this->objectManager->create(FakeMollieApiClient::class);
-        $fakeMollieApiClient->setInstance($client);
-        $this->objectManager->addSharedInstance($fakeMollieApiClient, MollieApiClient::class);
+        $this->loadFakeMollieApiClient()->fake($responses);
     }
 
     public static function usesTheFirstPaidTransactionDataProvider(): array

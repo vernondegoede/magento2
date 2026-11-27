@@ -13,21 +13,19 @@ use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Model\Order\Email\Sender\InvoiceSender;
 use Magento\Sales\Model\Order\Email\Sender\OrderSender;
-use Mollie\Api\Exceptions\ApiException;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\Requests\GetPaymentRequest;
-use Mollie\Api\MollieApiClient;
-use Mollie\Api\Resources\Payment;
-use Mollie\Api\Types\PaymentStatus;
+use Mollie\Api\Client;
+use Mollie\Api\Models\Components\PaymentResponse;
+use Mollie\Api\Models\Components\PaymentResponseStatus;
+use Mollie\Api\Models\Errors\APIException;
 use Mollie\Payment\Api\Data\TransactionToOrderInterface;
 use Mollie\Payment\Api\TransactionToOrderRepositoryInterface;
 use Mollie\Payment\Model\Client\Payments;
 use Mollie\Payment\Model\Client\Payments\ProcessTransaction;
 use Mollie\Payment\Model\OrderLines;
-use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
+use Mollie\Payment\Test\Integration\MolliePaymentBuilder;
 use PHPUnit\Framework\Attributes\DataProvider;
-use stdClass;
 
 class PaymentsTest extends IntegrationTestCase
 {
@@ -45,20 +43,20 @@ class PaymentsTest extends IntegrationTestCase
      * @param string $currency
      *
      * @throws LocalizedException
-     * @throws ApiException
+     * @throws APIException
      */
     #[DataProvider('processTransactionProvider')]
     public function testProcessTransaction(string $currency): void
     {
-        $client = MollieApiClient::fake([
-            GetPaymentRequest::class => MockResponse::ok('payment'),
+        $fake = $this->loadFakeMollieApiClient();
+        $fake->fake([
+            'GET /v2/payments/*' => MockResponse::payment([
+                'amount' => [
+                    'value' => '100.00',
+                    'currency' => $currency,
+                ],
+            ]),
         ]);
-
-        /** @var FakeMollieApiClient $fakeMollieApiClient */
-        $fakeMollieApiClient = $this->objectManager->get(FakeMollieApiClient::class);
-        $fakeMollieApiClient->setInstance($client);
-
-        $this->objectManager->addSharedInstance($fakeMollieApiClient, \Mollie\Payment\Service\Mollie\MollieApiClient::class);
 
         $orderLinesMock = $this->createMock(OrderLines::class);
 
@@ -92,36 +90,27 @@ class PaymentsTest extends IntegrationTestCase
         $this->assertEquals(Order::STATE_PROCESSING, $order->getState());
     }
 
-    /**
-     * @return Payment
-     */
-    protected function getMolliePayment($status, $currency): Payment
+    protected function getMolliePayment(string $status, string $currency): PaymentResponse
     {
-        $payment = new Payment($this->createMock(MollieApiClient::class));
-        $payment->id = 'tr_test_transaction';
-        $payment->status = $status;
+        /** @var MolliePaymentBuilder $builder */
+        $builder = $this->objectManager->create(MolliePaymentBuilder::class);
+        $builder->setId('tr_test_transaction');
+        $builder->setStatus($status);
+        $builder->setAmount(100, $currency);
 
-        $payment->amount = new stdClass();
-        $payment->amount->value = 100;
-        $payment->amount->currency = $currency;
-
-        $payment->_embedded = new stdClass();
-        $payment->_embedded->payments = [new stdClass()];
-        $payment->_embedded->payments[0]->status = 'success';
-
-        return $payment;
+        return $builder->build();
     }
 
     public static function checksIfTheOrderHasAnUpdateProvider(): array
     {
         return [
-            [PaymentStatus::OPEN, Order::STATE_NEW],
-            [PaymentStatus::PENDING, Order::STATE_PENDING_PAYMENT],
-            [PaymentStatus::AUTHORIZED, Order::STATE_PROCESSING],
-            [PaymentStatus::CANCELED, Order::STATE_CANCELED],
-            [PaymentStatus::EXPIRED, Order::STATE_CLOSED],
-            [PaymentStatus::PAID, Order::STATE_PROCESSING],
-            [PaymentStatus::FAILED, Order::STATE_CANCELED],
+            [PaymentResponseStatus::Open->value, Order::STATE_NEW],
+            [PaymentResponseStatus::Pending->value, Order::STATE_PENDING_PAYMENT],
+            [PaymentResponseStatus::Authorized->value, Order::STATE_PROCESSING],
+            [PaymentResponseStatus::Canceled->value, Order::STATE_CANCELED],
+            [PaymentResponseStatus::Expired->value, Order::STATE_CLOSED],
+            [PaymentResponseStatus::Paid->value, Order::STATE_PROCESSING],
+            [PaymentResponseStatus::Failed->value, Order::STATE_CANCELED],
         ];
     }
 
@@ -139,11 +128,12 @@ class PaymentsTest extends IntegrationTestCase
         /** @var Payments $instance */
         $instance = $this->objectManager->create(Payments::class);
 
-        $client = MollieApiClient::fake([
-            GetPaymentRequest::class => MockResponse::ok('{"status":"' . $mollieStatus . '"}'),
+        $fake = $this->loadFakeMollieApiClient();
+        $fake->fake([
+            'GET /v2/payments/*' => MockResponse::payment(['status' => $mollieStatus]),
         ]);
 
-        $this->assertFalse($instance->orderHasUpdate($order, $client));
+        $this->assertFalse($instance->orderHasUpdate($order, $fake->loadByStore()));
     }
 
     public function testItReturnsFalseForCompletedOrders()
@@ -152,7 +142,7 @@ class PaymentsTest extends IntegrationTestCase
         $order = $this->objectManager->create(OrderInterface::class);
         $order->setState(Order::STATE_COMPLETE);
 
-        $mollieApi = new MollieApiClient();
+        $mollieApi = Client::builder()->build();
 
         /** @var Payments $instance */
         $instance = $this->objectManager->create(Payments::class);
@@ -166,7 +156,7 @@ class PaymentsTest extends IntegrationTestCase
         $order = $this->objectManager->create(OrderInterface::class);
         $order->setState(Order::STATE_CLOSED);
 
-        $mollieApi = new MollieApiClient();
+        $mollieApi = Client::builder()->build();
 
         /** @var Payments $instance */
         $instance = $this->objectManager->create(Payments::class);

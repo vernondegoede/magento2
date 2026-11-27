@@ -11,11 +11,9 @@ namespace Mollie\Payment\Test\Integration\Service\Mollie;
 use Exception;
 use Magento\Framework\Exception\LocalizedException;
 use Magento\Payment\Model\MethodInterface;
-use Mollie\Api\Exceptions\ApiException;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\Requests\GetPaymentRequest;
-use Mollie\Api\MollieApiClient;
+use Mollie\Api\Models\Errors\ErrorResponseThrowable;
 use Mollie\Payment\Service\Mollie\FormatExceptionMessages;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
 use Mollie\Payment\Test\Integration\IntegrationTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 
@@ -162,17 +160,7 @@ class FormatExceptionMessagesTest extends IntegrationTestCase
         string $title,
         string $detail,
         ?string $field = null,
-    ): ApiException {
-        $client = MollieApiClient::fake([
-            GetPaymentRequest::class => MockResponse::error($status, $title, $detail, $field),
-        ]);
-
-        try {
-            $client->send(new GetPaymentRequest('tr_dummy'));
-        } catch (ApiException $exception) {
-            return $exception;
-        }
-
-        $this->fail('Expected the faked request to result in an ApiException');
+    ): ErrorResponseThrowable {
+        return MockResponse::errorThrowable($status, $title, $detail, $field);
     }
 }

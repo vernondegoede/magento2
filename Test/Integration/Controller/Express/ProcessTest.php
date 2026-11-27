@@ -10,16 +10,14 @@ namespace Mollie\Payment\Test\Integration\Controller\Express;
 
 use Magento\Framework\App\Request\Http;
 use Magento\TestFramework\TestCase\AbstractController;
-use Mollie\Api\Fake\MockResponse;
-use Mollie\Api\Http\Requests\GetSessionRequest;
-use Mollie\Api\MollieApiClient;
 use Mollie\Payment\Service\Mollie\Express\ProductBuyRequest;
 use Mollie\Payment\Service\Mollie\Express\ProductPaymentToken;
 use Mollie\Payment\Service\Mollie\Express\ProductQuote;
 use Mollie\Payment\Service\Mollie\Express\ProductSessions;
 use Mollie\Payment\Service\Mollie\Order\ConvertComponentsPaymentToOrder;
-use Mollie\Payment\Test\Integration\ExpressPaymentBuilder;
 use Mollie\Payment\Test\Fakes\Service\Mollie\FakeMollieApiClient;
+use Mollie\Payment\Test\Fakes\Service\Mollie\MockResponse;
+use Mollie\Payment\Test\Integration\ExpressPaymentBuilder;
 
 /**
  * The redirect of a product page session arrives before the webhook may have created the order and its payment
@@ -94,17 +92,14 @@ class ProcessTest extends AbstractController
 
     private function givenProductPageSession(string $status): void
     {
-        $client = MollieApiClient::fake([
-            GetSessionRequest::class => MockResponse::ok([
-                'resource' => 'session',
+        /** @var FakeMollieApiClient $fake */
+        $fake = $this->_objectManager->create(FakeMollieApiClient::class);
+        $fake->fake([
+            'GET /v2/sessions/*' => MockResponse::session([
                 'id' => self::SESSION_ID,
                 'status' => $status,
             ]),
         ]);
-
-        /** @var FakeMollieApiClient $fake */
-        $fake = $this->_objectManager->create(FakeMollieApiClient::class);
-        $fake->setInstance($client);
         $this->_objectManager->addSharedInstance($fake, \Mollie\Payment\Service\Mollie\MollieApiClient::class);
 
         $this->_objectManager->get(ProductSessions::class)->remember(self::TOKEN, self::SESSION_ID);
