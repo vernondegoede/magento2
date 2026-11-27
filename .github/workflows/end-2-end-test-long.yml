@@ -51,8 +51,8 @@ jobs:
           - PHP_VERSION: php84-fpm
             MAGENTO_VERSION: 2.4.9
             NO_API_KEY_TEST: false
-          - PHP_VERSION: php81-fpm
-            MAGENTO_VERSION: 2.4.5-p14
+          - PHP_VERSION: php82-fpm
+            MAGENTO_VERSION: 2.4.6-with-replacements
             NO_API_KEY_TEST: true
     runs-on: ubuntu-latest
     env:

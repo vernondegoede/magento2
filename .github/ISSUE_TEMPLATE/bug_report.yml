@@ -53,8 +53,6 @@ body:
         - "8.4"
         - "8.3"
         - "8.2"
-        - "8.1"
-        - "7.4"
     validations:
       required: true
 
